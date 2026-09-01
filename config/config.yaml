@@ -30,8 +30,8 @@ agent:
     - review_prs
     - triage_issues
 
-  # Label the agent applies to any ticket it is actively working on. Rule 12.
-  ongoing_label: in-progress
+  # (No label configured — rule 12 uses self-assignment as the sole
+  # visibility signal. See RULES.md.)
 
 # Release-meta prioritization. See RULES.md rule 16.
 release_meta:

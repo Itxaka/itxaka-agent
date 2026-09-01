@@ -138,12 +138,11 @@ For the ticket you picked:
    ```
 
    The body states what you are about to do (review, or investigate and reproduce).
-2. Self-assign: `gh issue edit <n> --add-assignee <agent.github_user>` (or `gh pr edit`).
-3. Apply the `agent.ongoing_label` (default `in-progress`). If the label does not exist on the repo, create it: `gh label create in-progress --description "..." --color e99695`.
-4. Create the envelope at `workspace/.state/<owner>_<repo>/<n>/envelope.json` with the schema from `docs/agent-roles.md`. Set `phase: coding` for issues, `phase: reviewing` for PRs.
-5. Ensure the fork clone exists at `workspace/<repo>/`. If not, `gh repo fork` (if the fork does not exist upstream on the agent account) and `git clone https://github.com/<fork_owner>/<repo>.git workspace/<repo>`. Add upstream: `git remote add upstream https://github.com/<owner>/<repo>.git`.
-6. Fetch upstream, fast-forward the default branch on the fork, push the updated default to the fork (rule 7). Create the working branch: `triage/<n>-<slug>` for issues, `review-repro/<n>` for PRs.
-7. For PRs, check the author login. If it is not `agent.github_user`, set `envelope.pre_review.third_party = true`. This gates the coder/tester/docs branches of the state machine — see "Third-party PRs" below.
+2. Self-assign: `gh issue edit <n> --add-assignee <agent.github_user>` (or `gh pr edit`). This is the sole visibility signal per rule 12 — do NOT create or apply repository labels, and do NOT update GitHub Project (v2) status columns.
+3. Create the envelope at `workspace/.state/<owner>_<repo>/<n>/envelope.json` with the schema from `docs/agent-roles.md`. Set `phase: coding` for issues, `phase: reviewing` for PRs.
+4. Ensure the fork clone exists at `workspace/<repo>/`. If not, `gh repo fork` (if the fork does not exist upstream on the agent account) and `git clone https://github.com/<fork_owner>/<repo>.git workspace/<repo>`. Add upstream: `git remote add upstream https://github.com/<owner>/<repo>.git`.
+5. Fetch upstream, fast-forward the default branch on the fork, push the updated default to the fork (rule 7). Create the working branch: `triage/<n>-<slug>` for issues, `review-repro/<n>` for PRs.
+6. For PRs, check the author login. If it is not `agent.github_user`, set `envelope.pre_review.third_party = true`. This gates the coder/tester/docs branches of the state machine — see "Third-party PRs" below.
 
 ### Pre-review collection (PRs only, before dispatching the reviewer)
 
@@ -203,8 +202,8 @@ On `reviewing`:
 
 A PR whose author is not `agent.github_user` is third-party (Renovate, human contributors). The fleet has no license to rewrite someone else's branch, so the coder/tester/docs pipeline is skipped:
 
-- On `approve`: post an approving review (`gh pr review --approve --body <disclosure + one-line summary>`), publish the audit trail, remove the `in-progress` label, set `phase: done`, and drop the ticket for the cycle.
-- On `changes-requested`: post `gh pr review --request-changes --body <...>` plus one `gh pr comment` per specific comment (inline suggestions where a line anchor is present), publish the audit trail, leave the `in-progress` label and self-assignment in place, and set `phase: awaiting-author`. The envelope is NOT `done` — the next slot re-polls this ticket, and if the author has pushed new commits since the recorded `head_sha`, regenerate `pre_review` and dispatch the reviewer again with `round++`. If `max_review_rounds` is reached without a new push, escalate per rule 18.
+- On `approve`: post an approving review (`gh pr review --approve --body <disclosure + one-line summary>`), publish the audit trail, set `phase: done`, and drop the ticket for the cycle.
+- On `changes-requested`: post `gh pr review --request-changes --body <...>` plus one `gh pr comment` per specific comment (inline suggestions where a line anchor is present), publish the audit trail, leave the self-assignment in place, and set `phase: awaiting-author`. The envelope is NOT `done` — the next slot re-polls this ticket, and if the author has pushed new commits since the recorded `head_sha`, regenerate `pre_review` and dispatch the reviewer again with `round++`. If `max_review_rounds` is reached without a new push, escalate per rule 18.
 
 `awaiting-author` is a terminal-for-this-slot state; it does not consume the ticket, only the slot. On the next slot boundary the manager re-picks the same envelope if the fleet is still assigned.
 
@@ -215,14 +214,14 @@ A PR whose author is not `agent.github_user` is third-party (Renovate, human con
 3. Compose the audit summary from the envelope. Human-readable, chronological, one row per phase-round, listing role, commit shas / test paths / doc paths / log paths, and reviewer verdicts.
 4. Run the redactor from `audit.redact`: replace `$HOME` with `~`, MAC addresses with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs with `x.x.x.x`, and every `audit.redact.token_shapes` regex match with `<redacted>`. Run on both the summary and the envelope JSON.
 5. Post the summary as an issue comment. If the redacted envelope fits under `audit.inline_envelope_max_chars`, append it inside a collapsed `<details><summary>envelope.json</summary>` block. Otherwise `gh gist create` with the JSON and link to the gist from the summary.
-6. Remove the `in-progress` label. Leave `assignee` as is (the PR references the closed loop; a maintainer decides whether to unassign on merge).
+6. Leave `assignee` as is (the PR references the closed loop; a maintainer decides whether to unassign on merge).
 7. Set `phase: done`. Save the envelope one final time.
 
 ### Escalate
 
 Do the same publication as finalize, but:
 
-- `gh issue edit <n> --remove-assignee <agent.github_user>`.
+- `gh issue edit <n> --remove-assignee <agent.github_user>` (this is the sole state-change on escalation; no label removal, no project field update).
 - Do NOT push the branch. It stays on the fork for the human to fetch if they want it.
 - Do NOT open a PR.
 - The summary explains why the loop deadlocked: the reviewer's last verdict, the coder's response, and the round history.
@@ -263,7 +262,6 @@ When `KAIROS_TRIAGE_DRY_RUN` is truthy at startup, the manager runs the entire p
 
 - `gh issue comment`, `gh pr comment`, `gh pr review --body ...`
 - `gh issue edit --add-assignee`, `gh issue edit --remove-assignee`, `gh pr edit ...`
-- `gh issue edit --add-label`, `gh issue edit --remove-label`, `gh label create`
 - `gh pr create`, `gh pr ready`, `gh pr close`, `gh pr merge`
 - `gh gist create`
 - `git push` (any remote, any branch)

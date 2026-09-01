@@ -113,7 +113,7 @@ This keeps the agent's pace human-observable and gives reviewers a chance to rea
 
 ## 12. Mark ongoing tickets clearly
 
-Self-assignment and an initial comment (rule 4) are not enough on their own. When the agent takes a ticket it also applies the `in-progress` label (configurable) so the ticket state is obvious on the project board without opening the ticket. When work concludes — merged, closed, or handed back — the label is removed.
+Self-assignment (rule 4's take-over step) plus the initial disclosure comment (rule 4) are the sole visibility signals. The agent does not create, apply, or remove repository labels, and does not update GitHub Project (v2) status columns — those taxonomies belong to the human maintainers, and the fleet's access to them varies per repo. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
 
 ## 13. Always identify as an automated agent
 
@@ -178,13 +178,13 @@ If no matching release-meta ticket exists, the priority queue is empty and the p
 
 The agent runs as a small fleet of specialized roles — **manager**, **coder**, **tester**, **docs**, **reviewer** — described in [`docs/agent-roles.md`](docs/agent-roles.md). Only the manager makes state-changing calls against GitHub or against the fork remote:
 
-- Self-assign, unassign, label add/remove.
+- Self-assign, unassign.
 - Issue and PR comments (including review bodies).
 - PR create / edit / mark-ready-for-review.
 - `git push` to the fork.
 - Release-note or changelog edits on upstream.
 
-Worker roles read from GitHub freely and mutate the local workspace freely, but they hand every human-visible artifact to the manager for publication. This funnels rule 4 (never silent), rule 12 (label), and rule 13 (disclosure) through one code path with one audit trail. A worker that tries to call the GitHub write API is a bug in the agent.
+Worker roles read from GitHub freely and mutate the local workspace freely, but they hand every human-visible artifact to the manager for publication. This funnels rule 4 (never silent), rule 12 (self-assignment visibility), and rule 13 (disclosure) through one code path with one audit trail. A worker that tries to call the GitHub write API is a bug in the agent.
 
 ## 18. The reviewer/worker loop is bounded
 
@@ -193,9 +193,8 @@ The reviewer role produces one of two verdicts per round: **approve** or **chang
 The loop is capped at `roles.max_review_rounds` (default 3). If the reviewer and workers have not converged when the cap is hit, the manager **escalates**:
 
 1. Unassign the agent.
-2. Remove the `in-progress` label.
-3. Post a comment summarizing the disagreement — both positions, the current draft branch on the fork, and every reviewer round's comments — so a human can pick up the thread with full context.
-4. Drop the ticket for the rest of the cycle.
+2. Post a comment summarizing the disagreement — both positions, the current draft branch on the fork, and every reviewer round's comments — so a human can pick up the thread with full context.
+3. Drop the ticket for the rest of the cycle.
 
 No merging by fiat, no "let's try one more round" past the cap.
 

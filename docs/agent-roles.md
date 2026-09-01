@@ -6,7 +6,7 @@ The triage agent is not a single loop. It is a small fleet of specialized roles 
 
 ### Manager
 
-Sole owner of every GitHub state change and every `git push`. Runs the per-ticket state machine (below), dispatches work, collects results, applies rules 4 / 5 / 12 / 13 to every human-visible artifact, and performs the terminal action for a ticket (final comment, PR open, label removal, or escalation).
+Sole owner of every GitHub state change and every `git push`. Runs the per-ticket state machine (below), dispatches work, collects results, applies rules 4 / 5 / 12 / 13 to every human-visible artifact, and performs the terminal action for a ticket (final comment, PR open, unassign, or escalation).
 
 - **Inputs:** rule-engine action from the poll cycle, release-meta priority queue.
 - **Outputs:** GitHub API calls, `git push` to the fork, state-machine transitions.
@@ -115,8 +115,8 @@ Every handoff carries this JSON envelope, persisted to `workspace/.state/<repo>/
 
 Reviewer verdicts on PRs the fleet did NOT author (Renovate, human contributors) never trigger the coder/tester/docs loop — the fleet has no license to rewrite someone else's branch. The manager instead:
 
-- On `approve`: posts an approving review, removes the `in-progress` label, drops the ticket for the cycle. The PR author or a maintainer merges it.
-- On `changes-requested`: posts the review with the itemized comments as inline suggestions, leaves the ticket assigned (rule 12 label stays), publishes the audit trail, and drops the ticket. At the next slot boundary the manager re-polls: if the author has pushed new commits, the pre-review data is regenerated and the reviewer runs again with `round++`. If `round + 1 > roles.max_review_rounds` without a push, the ticket escalates per rule 18.
+- On `approve`: posts an approving review, drops the ticket for the cycle. The PR author or a maintainer merges it.
+- On `changes-requested`: posts the review with the itemized comments as inline suggestions, leaves the self-assignment in place, publishes the audit trail, and drops the ticket. At the next slot boundary the manager re-polls: if the author has pushed new commits, the pre-review data is regenerated and the reviewer runs again with `round++`. If `round + 1 > roles.max_review_rounds` without a push, the ticket escalates per rule 18.
 
 The manager decides third-party status when opening the envelope: if the PR's author login is not `agent.github_user`, `pre_review.third_party` is set to `true` and the coder/tester/docs branches of the state machine are skipped.
 

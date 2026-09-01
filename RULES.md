@@ -150,3 +150,24 @@ Fixes for reported bugs follow a fixed three-phase workflow, one commit per phas
 The three commits stay separate on the working branch so the PR history is self-documenting. If a maintainer asks for a squash, that happens at merge time on their side, not on the agent's branch.
 
 When a bug is not testable in code (hardware-specific, requires human interaction, external service state) the agent falls back to rule 3 — QEMU reproduction and an exhaustive comment — and does not open a PR.
+
+## 16. Release-meta tickets set the priority queue
+
+Kairos ships in semver releases. Some open issues on `kairos-io/kairos` are release-meta tickets: they carry the `release` label, their title matches `^Release v?\d+\.\d+\.\d+`, and their body is a checklist of linked child issues and PRs that must land before that version can ship. Work referenced by the **next** unreleased release takes priority over everything else.
+
+Selection algorithm (evaluated at every slot boundary):
+
+1. Enumerate open issues on `kairos-io/kairos` that match the meta-ticket detection above.
+2. Extract the semver from each title, drop any that already has a matching git tag on `kairos-io/kairos`.
+3. Sort ascending. The lowest remaining version is the **current release meta**. Higher versions are future work and stay off the priority list.
+4. Parse the current release meta's body and every one of its comments for referenced tickets: task-list rows (`- [ ] #123`), autolinked `#N` mentions, full URLs, and cross-repo references (`kairos-io/auroraboot#45`). This set is the **priority queue** for the cycle.
+5. If the current release meta's priority queue is empty (every child closed or merged), advance to the next semver meta and repeat from step 3.
+
+Application inside the existing pipeline (rule 8):
+
+- **Stage `review_prs`** processes PRs in the priority queue first, then falls back to all other PRs missing review.
+- **Stage `triage_issues`** processes issues in the priority queue first, then falls back to all other unassigned issues that match `config/rules.yaml`.
+
+The rest of the ground rules still apply inside each tier — assigned-to-human tickets are still off-limits (rule 5), PR review still runs before issue triage (rule 8), and the 30-minute slot floor is not bypassed (rule 11).
+
+If no matching release-meta ticket exists, the priority queue is empty and the pipeline degrades gracefully to the plain order.

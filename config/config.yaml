@@ -33,6 +33,31 @@ agent:
   # Label the agent applies to any ticket it is actively working on. Rule 12.
   ongoing_label: in-progress
 
+# Release-meta prioritization. See RULES.md rule 16.
+release_meta:
+  # Repositories whose issues are scanned for meta tickets. Typically just
+  # the top-level `kairos` repo, which is where the release roadmap lives.
+  repos:
+    - kairos-io/kairos
+
+  # A ticket is treated as a release meta when it carries this label OR
+  # its title matches the regex below. Both signals are OR-ed.
+  detection:
+    label: release
+    title_regex: '^Release v?\d+\.\d+\.\d+'
+
+  # Version → tag mapping. To decide whether a meta ticket's version is
+  # already shipped, the agent looks for a matching git tag under this
+  # tag_prefix on the meta's home repo.
+  tag_prefix: v
+
+  # Reference extraction patterns. Applied to the meta ticket body and
+  # every comment. Anything matched here joins the priority queue.
+  reference_patterns:
+    - '#(?P<num>\d+)'                                   # bare #123
+    - 'kairos-io/(?P<repo>[a-z0-9\-]+)#(?P<num>\d+)'    # cross-repo
+    - 'https://github\.com/kairos-io/(?P<repo>[a-z0-9\-]+)/(issues|pull)/(?P<num>\d+)'
+
 # Working hours and time slots. See RULES.md rule 11.
 schedule:
   # Local timezone the working window is expressed in.

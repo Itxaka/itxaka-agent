@@ -13,20 +13,26 @@ at every slot boundary (see schedule.slot_minutes):
         continue current_task
         next
 
+    # Compute the release-meta priority queue for this cycle (rule 16).
+    meta = pick_next_release_meta(kairos-io/kairos)
+    priority_refs = extract_references(meta) if meta else set()
+
     # Priority 1 — PR reviews.
-    for repo in repositories where watch.pull_requests:
-        pr = next open PR missing a review from us
-        if pr:
-            enqueue pr for reviewer
-            break
+    for source in [priority_refs, "all"]:
+        for repo in repositories where watch.pull_requests:
+            pr = next open PR missing a review from us, restricted to `source`
+            if pr:
+                enqueue pr for reviewer
+                break
 
     # Priority 2 — issue triage (only if no PR needed a review).
     if reviewer queue empty:
-        for repo in repositories where watch.issues:
-            issue = next open unassigned issue matching rules
-            if issue and taken_this_cycle < max_new_tickets_per_cycle:
-                enqueue issue for investigator
-                break
+        for source in [priority_refs, "all"]:
+            for repo in repositories where watch.issues:
+                issue = next open unassigned issue matching rules, restricted to `source`
+                if issue and taken_this_cycle < max_new_tickets_per_cycle:
+                    enqueue issue for investigator
+                    break
 
     reviewer.run_one()      # PR review, may span multiple slots
     investigator.run_one()  # issue investigation, may span multiple slots
@@ -39,6 +45,7 @@ Two workers, not one: the reviewer consumes PRs, the investigator consumes issue
 - **scheduler** — owns the slot clock. Wakes at every slot boundary, checks the working window, and either advances current work or picks up next work. Rule 11.
 - **poller** — GitHub API client, lists issues/PRs, applies etag caching so idle cycles are free.
 - **rule engine** — evaluates `config/rules.yaml` against a ticket, emits an action.
+- **release tracker** — scans open issues for release-meta tickets, sorts them by semver, drops any whose tag already exists, and returns the priority reference set (rule 16).
 - **workspace manager** — owns `workspace/`, guarantees rule 6 (paths never escape it) and rule 7 (default branch is fresh before branching).
 - **reviewer** — per-PR state machine: read diff → read linked issues/commits → pull branch → (optionally) build ISO and boot in QEMU → post review. Rules 8 and 9.
 - **investigator** — per-issue state machine: assign → label `in-progress` → announce → reproduce → report → (optionally) PR. Rules 4, 10, 12.

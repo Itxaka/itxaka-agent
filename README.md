@@ -30,6 +30,7 @@ The non-negotiable behaviors are documented in [`RULES.md`](./RULES.md). Read th
 | `docs/`           | Design notes and operational documentation                     |
 | `workspace/`      | Scratch directory where the agent clones repos (gitignored)    |
 | `RULES.md`        | The ground rules the agent must obey                           |
+| `docs/agent-roles.md` | Multi-role fleet layout (manager, coder, tester, docs, reviewer) |
 
 ## Status
 

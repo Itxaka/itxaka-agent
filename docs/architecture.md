@@ -42,7 +42,10 @@ Two workers, not one: the reviewer consumes PRs, the investigator consumes issue
 
 ## Components
 
+The single "investigator" and "reviewer" boxes below are actually **fleets of roles** coordinated by a manager — see [`agent-roles.md`](./agent-roles.md) and RULES.md rules 17-19. From the scheduler's point of view they are still one worker each; internally they are a coder/tester/docs/reviewer pipeline funneling through the manager.
+
 - **scheduler** — owns the slot clock. Wakes at every slot boundary, checks the working window, and either advances current work or picks up next work. Rule 11.
+- **manager** — sole GitHub-write authority; dispatches worker roles for the current ticket, drives the per-ticket state machine, escalates on unresolved review disagreements.
 - **poller** — GitHub API client, lists issues/PRs, applies etag caching so idle cycles are free.
 - **rule engine** — evaluates `config/rules.yaml` against a ticket, emits an action.
 - **release tracker** — scans open issues for release-meta tickets, sorts them by semver, drops any whose tag already exists, and returns the priority reference set (rule 16).

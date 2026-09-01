@@ -76,6 +76,28 @@ schedule:
   # Days of the week the agent runs on (0 = Sunday … 6 = Saturday).
   active_weekdays: [1, 2, 3, 4, 5]
 
+# Multi-role fleet. See docs/agent-roles.md and RULES.md rules 17-19.
+roles:
+  # Hard cap on reviewer/worker rounds before the manager escalates.
+  max_review_rounds: 3
+
+  # Where per-ticket envelopes live. Crash-recoverable state; also the
+  # audit trail a human reads to see what the roles said to each other.
+  state_dir: workspace/.state
+
+  # How many tickets the manager keeps in flight at once. Start at 1
+  # while the fleet stabilizes; raise later if slot budgeting allows.
+  concurrency: 1
+
+  # Per-role runtime knobs. Filled in once the runtime is chosen; these
+  # are placeholders that document the shape.
+  runtimes:
+    manager:  { timeout_minutes: 5,  token_budget: null }
+    coder:    { timeout_minutes: 20, token_budget: null }
+    tester:   { timeout_minutes: 45, token_budget: null }   # QEMU boots take time
+    docs:     { timeout_minutes: 10, token_budget: null }
+    reviewer: { timeout_minutes: 10, token_budget: null }
+
 # Repositories the agent watches. Order is significant: earlier entries are
 # scanned first each cycle, so put the highest-signal repos on top.
 repositories:

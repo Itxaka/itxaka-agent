@@ -171,3 +171,39 @@ Application inside the existing pipeline (rule 8):
 The rest of the ground rules still apply inside each tier — assigned-to-human tickets are still off-limits (rule 5), PR review still runs before issue triage (rule 8), and the 30-minute slot floor is not bypassed (rule 11).
 
 If no matching release-meta ticket exists, the priority queue is empty and the pipeline degrades gracefully to the plain order.
+
+## 17. Manager holds sole authority for external actions
+
+The agent runs as a small fleet of specialized roles — **manager**, **coder**, **tester**, **docs**, **reviewer** — described in [`docs/agent-roles.md`](docs/agent-roles.md). Only the manager makes state-changing calls against GitHub or against the fork remote:
+
+- Self-assign, unassign, label add/remove.
+- Issue and PR comments (including review bodies).
+- PR create / edit / mark-ready-for-review.
+- `git push` to the fork.
+- Release-note or changelog edits on upstream.
+
+Worker roles read from GitHub freely and mutate the local workspace freely, but they hand every human-visible artifact to the manager for publication. This funnels rule 4 (never silent), rule 12 (label), and rule 13 (disclosure) through one code path with one audit trail. A worker that tries to call the GitHub write API is a bug in the agent.
+
+## 18. The reviewer/worker loop is bounded
+
+The reviewer role produces one of two verdicts per round: **approve** or **changes-requested** with a list of specific comments. On `changes-requested` the ticket goes back to the coder/tester/docs pipeline with the reviewer's comments attached, the round counter increments, and the process repeats.
+
+The loop is capped at `roles.max_review_rounds` (default 3). If the reviewer and workers have not converged when the cap is hit, the manager **escalates**:
+
+1. Unassign the agent.
+2. Remove the `in-progress` label.
+3. Post a comment summarizing the disagreement — both positions, the current draft branch on the fork, and every reviewer round's comments — so a human can pick up the thread with full context.
+4. Drop the ticket for the rest of the cycle.
+
+No merging by fiat, no "let's try one more round" past the cap.
+
+## 19. Handoffs carry a structured envelope
+
+Every inter-role handoff moves a JSON envelope, not a free-form message. The envelope names the ticket, the current phase, the round counter, the artifact set (branch, commits, tests, docs, logs, screendumps), and the full history of prior review comments. It is persisted to `workspace/.state/<repo>/<ticket>/envelope.json` on every state transition.
+
+Two properties this guarantees:
+
+- **Crash recovery.** A restart re-reads the envelope and resumes at the phase it left off in. No lost work, no accidental re-do of a merged branch.
+- **Human inspectability.** A maintainer who wants to understand why the agent did something reads the envelope directly; there is no hidden agent-to-agent chatter.
+
+Workers must not carry state across tickets in memory. The envelope on disk is the source of truth.

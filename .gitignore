@@ -26,3 +26,6 @@ config/rules.local.yaml
 
 # Generated dashboard output. Regenerate via `dashboard/generate.sh`.
 /dashboard/*.html
+
+# Claude Code cron/scheduled-task lock file — session-local.
+.claude/scheduled_tasks.lock

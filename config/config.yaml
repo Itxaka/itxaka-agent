@@ -127,14 +127,16 @@ audit:
   # PR-body variant is a config change, not a code change.
   target: issue_comment
 
-  # Attach the raw envelope inline (fenced in a collapsed <details> block)
-  # when it fits under this many characters. Larger envelopes go to a gist
-  # under the itxaka-agent account and are linked from the summary.
-  inline_envelope_max_chars: 40000
+  # Envelope always ships as a private gist under itxaka-agent, linked
+  # from the summary. Never inlined — see RULES.md rule 20.
+  envelope_target: gist
 
   # Redaction applied to both the summary and the raw envelope before
-  # anything leaves the workspace. Rule 20.
+  # anything leaves the workspace. Rule 20. `strip_cost` removes the
+  # envelope.cost block entirely before the gist upload; the local audit
+  # DB keeps the numbers.
   redact:
+    strip_cost:    true
     home_paths:    true       # $HOME -> ~
     mac_addresses: true       # xx:xx:xx:xx:xx:xx
     public_ips:    true       # non-loopback / non-RFC1918 / non-documentation

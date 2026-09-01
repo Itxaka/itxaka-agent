@@ -23,6 +23,34 @@ agent:
   # Prevents a flood of new issues from overwhelming its investigation queue.
   max_new_tickets_per_cycle: 2
 
+  # Fixed processing order per cycle. Higher priority workloads drain first;
+  # the agent only descends the list when the current stage has nothing to
+  # do. See RULES.md rule 8.
+  pipeline:
+    - review_prs
+    - triage_issues
+
+  # Label the agent applies to any ticket it is actively working on. Rule 12.
+  ongoing_label: in-progress
+
+# Working hours and time slots. See RULES.md rule 11.
+schedule:
+  # Local timezone the working window is expressed in.
+  timezone: Europe/Madrid
+
+  # Working window (inclusive start, exclusive end). Outside this window the
+  # agent does not start new work.
+  working_hours:
+    start: "08:00"
+    end:   "17:00"
+
+  # Each ticket occupies at least one slot of this length. The next-pickup
+  # decision runs at slot boundaries, not on task completion.
+  slot_minutes: 30
+
+  # Days of the week the agent runs on (0 = Sunday … 6 = Saturday).
+  active_weekdays: [1, 2, 3, 4, 5]
+
 # Repositories the agent watches. Order is significant: earlier entries are
 # scanned first each cycle, so put the highest-signal repos on top.
 repositories:
@@ -31,6 +59,13 @@ repositories:
     default_branch: master
     watch:
       issues: true
+      pull_requests: true
+  - owner: kairos-io
+    name: auroraboot
+    default_branch: main
+    watch:
+      # Issue triage stays scoped to the kairos repo per user direction.
+      issues: false
       pull_requests: true
 
 # GitHub authentication.

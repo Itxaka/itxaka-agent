@@ -4,17 +4,19 @@ Autonomous triage agent for the [Kairos](https://github.com/kairos-io/kairos) ec
 
 ## What it does
 
-Every poll cycle (default: 30 minutes) the agent:
+Between 08:00 and 17:00 local time, on every 30-minute slot boundary, the agent:
 
-1. Fetches open issues and pull requests from the configured Kairos repositories.
-2. Filters out anything already assigned to a human contributor.
-3. Applies takeover rules (see `config/rules.yaml`) to decide whether to engage.
-4. For each ticket it takes:
-   - Assigns itself.
-   - Posts a comment announcing the investigation.
-   - Clones the affected repository into `workspace/`.
-   - Investigates the reported behavior — reading code, checking history, reproducing in QEMU when feasible.
-   - Reports findings back on the ticket and, when a code change is warranted, opens a PR **from a fork**.
+1. Looks for open pull requests on `kairos-io/kairos` and `kairos-io/auroraboot` that still need a review. For each PR it takes:
+   - Reads the diff, every commit message, and the PR description.
+   - Follows every linked issue and referenced PR to understand the goal.
+   - Pulls the branch locally and, when the change touches runtime behavior, builds an ISO and boots it under QEMU.
+   - Posts a review that states what was verified and how.
+2. Only if no PR needs a review, moves to open issues on `kairos-io/kairos`:
+   - Filters out anything already assigned to a human contributor.
+   - Applies takeover rules (see `config/rules.yaml`) to decide whether to engage.
+   - For each ticket it takes: self-assigns, applies the `in-progress` label, comments announcing the investigation, clones the affected repository into `workspace/`, investigates, and reports findings — with full reproduction steps and artifacts where possible. When a code change is warranted, opens a PR **from a fork**.
+
+Every taken slot is at least 30 minutes long. The agent does not immediately pick up new work if a task finishes early — the next-pickup decision runs at the next slot boundary.
 
 ## Ground rules
 

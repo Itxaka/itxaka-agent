@@ -87,6 +87,22 @@ CREATE TABLE IF NOT EXISTS costs (
   ts         TEXT NOT NULL
 );
 
+-- Per-finding comments produced by the reviewer, one row per file:line entry
+-- of a `changes-requested` verdict. This is what a human wants to read on the
+-- ticket page — the actual problems and their suggestions, not just the count.
+CREATE TABLE IF NOT EXISTS comments (
+  comment_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot_id     TEXT NOT NULL REFERENCES slots(slot_id),
+  ticket_ref  TEXT NOT NULL,
+  round       INTEGER NOT NULL,
+  role        TEXT NOT NULL,                 -- who authored the comment; usually 'reviewer'
+  file        TEXT,
+  line        INTEGER,
+  problem     TEXT NOT NULL,
+  suggestion  TEXT,
+  ts          TEXT NOT NULL
+);
+
 -- Full prose report from a worker's own hand — free-form journal written
 -- by the role during its work, slurped by the manager after the subagent
 -- returns and inserted here verbatim. This is the retrospective tail:
@@ -123,3 +139,5 @@ CREATE INDEX IF NOT EXISTS idx_costs_slot    ON costs(slot_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_slot ON artifacts(slot_id);
 CREATE INDEX IF NOT EXISTS idx_worker_reports_slot ON worker_reports(slot_id);
 CREATE INDEX IF NOT EXISTS idx_worker_reports_ticket ON worker_reports(ticket_ref);
+CREATE INDEX IF NOT EXISTS idx_comments_ticket ON comments(ticket_ref);
+CREATE INDEX IF NOT EXISTS idx_comments_slot ON comments(slot_id);

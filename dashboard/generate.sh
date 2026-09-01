@@ -200,6 +200,59 @@ FROM artifacts
 ORDER BY artifact_id DESC
 LIMIT 200"
 
+# ---- per-ticket detail (conclusion + comments + journal) --------------------
+echo '<section><h2>By ticket</h2>'
+sqlite3 -separator $'\x1f' "$DB" "
+  SELECT t.ticket_ref,
+         COALESCE(t.kind,''),
+         COALESCE(t.author,''),
+         CASE WHEN t.third_party=1 THEN 'third-party' ELSE 'fleet' END,
+         COALESCE(t.terminal_phase,'')
+  FROM tickets t
+  ORDER BY t.last_seen_at DESC" \
+  | while IFS=$'\x1f' read -r tref kind author party phase; do
+
+      echo "<details open>"
+      echo "<summary><code>${tref}</code> <span class=\"small\">${kind} / ${author} / ${party} / <span class=\"pill ${phase}\">${phase}</span></span></summary>"
+
+      # Latest verdict paragraph — the reviewer's return_text is the human-readable conclusion.
+      echo "<h3 style=\"font-size:13px;margin:12px 0 4px;color:var(--muted)\">Latest reviewer conclusion</h3>"
+      rid="$(sqlite3 "$DB" "SELECT report_id FROM worker_reports WHERE ticket_ref='$tref' AND role='reviewer' ORDER BY report_id DESC LIMIT 1")"
+      if [ -n "$rid" ]; then
+        echo "<pre>"
+        sqlite3 "$DB" "SELECT COALESCE(return_text,'(no return text)') FROM worker_reports WHERE report_id=$rid" | htmlescape
+        echo "</pre>"
+      else
+        echo '<p class="empty">no reviewer report yet</p>'
+      fi
+
+      # Per-finding comments.
+      echo "<h3 style=\"font-size:13px;margin:12px 0 4px;color:var(--muted)\">Comments</h3>"
+      cmts="$(sqlite3 -html "$DB" "
+        SELECT round AS r, role, COALESCE(file,'—') AS file, COALESCE(line,'') AS line,
+               problem, COALESCE(suggestion,'') AS suggestion
+        FROM comments WHERE ticket_ref='$tref' ORDER BY round, comment_id")"
+      [ -n "$cmts" ] && echo "<table>$cmts</table>" || echo '<p class="empty">no comments on record</p>'
+
+      # Full reviewer journal (collapsed by default; it's long).
+      echo "<h3 style=\"font-size:13px;margin:12px 0 4px;color:var(--muted)\">Reviewer journal</h3>"
+      if [ -n "$rid" ]; then
+        jlen="$(sqlite3 "$DB" "SELECT COALESCE(LENGTH(journal),0) FROM worker_reports WHERE report_id=$rid")"
+        if [ "$jlen" != "0" ]; then
+          echo "<details><summary>show journal <span class=\"small\">(${jlen} bytes)</span></summary>"
+          echo "<pre>"
+          sqlite3 "$DB" "SELECT journal FROM worker_reports WHERE report_id=$rid" | htmlescape
+          echo "</pre>"
+          echo "</details>"
+        else
+          echo '<p class="empty">journal empty</p>'
+        fi
+      fi
+
+      echo "</details>"
+    done
+echo '</section>'
+
 # ---- per-slot detail (events + journals) -----------------------------------
 echo '<section><h2>Slot detail</h2>'
 sqlite3 -separator '|' "$DB" "SELECT slot_id, COALESCE(ticket_ref,''), COALESCE(outcome,''), started_at FROM slots ORDER BY started_at DESC LIMIT 50" \

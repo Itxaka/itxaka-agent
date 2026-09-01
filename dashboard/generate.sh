@@ -229,13 +229,13 @@ cat <<'TABS_OPEN'
 <div class="tabs">
   <input type="radio" name="tab" id="tab-slots" checked>
   <input type="radio" name="tab" id="tab-tickets">
-  <input type="radio" name="tab" id="tab-costs">
   <input type="radio" name="tab" id="tab-artifacts">
+  <input type="radio" name="tab" id="tab-costs">
   <div class="tabbar">
     <label for="tab-slots">Slots</label>
     <label for="tab-tickets">Tickets</label>
-    <label for="tab-costs">Costs</label>
     <label for="tab-artifacts">Artifacts</label>
+    <label for="tab-costs">Costs</label>
   </div>
 TABS_OPEN
 

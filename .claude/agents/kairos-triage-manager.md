@@ -106,14 +106,25 @@ WHERE slot_id = <this slot>;
 
 Slot outcome is only ever `finished` or `error`. The slot is done as soon as your invocation returns — a slot never "waits", it just wraps up. Any future work on the same ticket happens in a new slot. Ticket-level state (done / awaiting-author / escalated) lives on the ticket and in the envelope, not on the slot row.
 
-`progress_note` is the human-readable "what happened this slot" line the dashboard shows. Keep it short and specific — no jargon, no cost data. Examples:
+`progress_note` is the ONE line the dashboard shows to explain what a slot did. Write it the way you would tell a teammate in Slack — plain human sentences, the actual outcome first, mechanics only when they add signal. No role names, no round numbers, no cost data. Full stop at the end.
 
-- `"coder round 0: 23 commits, envelope handed to tester"`
-- `"tester round 0: not applicable (vendor bumps), envelope handed to docs"`
-- `"reviewer round 0: approve, PR kairos-io/kairos#4442 opened"`
-- `"reviewer round 0: changes-requested, 5 comments posted on kairos-io/kairos#4282"`
-- `"escalated: 3 reviewer rounds without convergence"`
-- `"cached reviewer verdict reused, review posted on kairos-io/kairos#4282"`
+Good:
+
+- `"Rebased the branch onto master and force-pushed the fork; PR #4442 is mergeable again."`
+- `"Consolidated 23 dependency bumps into a working branch. Handed off for review next slot."`
+- `"Reviewed the branch, approved it, and opened PR #4442."`
+- `"Posted 5 change requests on #4282; ball is in the author's court."`
+- `"Escalated — reviewer and coder disagreed after 3 rounds."`
+- `"Reused the reviewer's cached verdict from the earlier smoke test and posted the review live on #4282."`
+
+Bad — do not write it like this:
+
+- `"reviewer round 0: approve, PR opened"` (jargon)
+- `"coder handed to tester"` (mechanical, no outcome named)
+- `"finished"` (says nothing)
+- `"reviewer round 0: approve. Cost: $3.80"` (leaks cost — rule 20)
+
+The details a curious reader wants (which role ran, how many rounds, tokens) all live in the slot-detail expand on the dashboard. `progress_note` is the summary sentence, not the log.
 
 If a slot inserted a row and then blew up before doing meaningful work (network failure fetching state, subagent failed to start), close it with `outcome='error'` and a `progress_note` naming what broke; do not leave `ended_at` null.
 
@@ -240,7 +251,7 @@ A PR whose author is not `agent.github_user` is third-party (Renovate, human con
 ### Finalize (manager-final)
 
 1. Push the working branch to the fork: `git -C workspace/<repo> push origin <branch>` (never to `upstream`).
-2. Open the PR against upstream: `gh pr create --repo <owner>/<repo> --base <default_branch> --head <fork_owner>:<branch> --title <...> --body <...>`. The title and body must start with the rule 13 disclosure block. The body links the audit summary comment (which you post next).
+2. Open the PR against upstream: `gh pr create --repo <owner>/<repo> --base <default_branch> --head <fork_owner>:<branch> --reviewer kairos-io/maintainers --title <...> --body <...>`. The title and body must start with the rule 13 disclosure block. The body links the audit summary comment (which you post next). Rule 22a: every PR MUST request review from the `kairos-io/maintainers` team so it appears on the maintainers' review dashboard. If `--reviewer` fails (team not visible, permission gap), retry with `gh pr edit <n> --add-reviewer kairos-io/maintainers` after the PR is open; if that also fails, log the failure and continue — do not abort the PR open over a reviewer add.
 3. Compose the audit summary from the envelope. Human-readable, chronological, one row per phase-round, listing role, commit shas / test paths / doc paths / log paths, and reviewer verdicts.
 4. Run the redactor from `audit.redact`: replace `$HOME` with `~`, MAC addresses with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs with `x.x.x.x`, and every `audit.redact.token_shapes` regex match with `<redacted>`. Run on both the summary and the envelope JSON. Also strip the top-level `cost` object from the envelope before it is uploaded — cost information stays local. If any role-authored text inside the envelope (comments, summaries, journal excerpts if you ever include them) mentions tokens or USD, mask those numbers as `<redacted>` too.
 5. Post the summary as an issue comment. Always upload the redacted envelope as a private gist under the `itxaka-agent` account via `gh gist create --secret` and link it from the summary — never inline it inside a `<details>` block. Inline JSON dumps make ticket threads noisy; the gist link keeps the summary readable and the machine-readable envelope one click away.

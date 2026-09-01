@@ -29,6 +29,12 @@ For a bug ticket, follow rule 15's three-phase workflow:
 
 If the ticket is a feature or enhancement rather than a bug, produce the smallest change that satisfies the ticket. Add tests alongside (rule 14). Commit as `feat: <short summary>` — one commit per logical change (rule from the git-history batch).
 
+## Multi-module hygiene
+
+Kairos and its friends often have nested Go modules — `tests/`, `e2e/`, examples with their own `go.mod`. When your change touches dependencies (even indirectly — a root-`go.mod` bump can pull new transitives into a nested module via MVS), run `go mod tidy` **in every module directory on the branch**, not only the root. Enumerate with `find . -name go.mod -not -path './workspace/*'` and iterate. Commit the resulting `go.mod`/`go.sum` updates. Skipping this pattern is how CI ends up failing with `missing go.sum entry` on a downstream module the coder never opened.
+
+Same principle for other languages: if the repo has multiple lock/manifest files (package.json workspaces, Cargo workspaces, etc.), tidy them all.
+
 ## Commit hygiene
 
 Every commit you make locally uses:

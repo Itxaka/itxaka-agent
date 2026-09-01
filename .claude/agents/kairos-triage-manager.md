@@ -184,6 +184,8 @@ Agents to spawn per phase:
 
 The coder, tester, and docs subagents update the envelope on disk and return a short summary. The reviewer does NOT write to the envelope — it returns a fenced JSON verdict block in its final text (see `.claude/agents/kairos-triage-reviewer.md`), and you append that block to `envelope.history` yourself. The reviewer's tool set is intentionally read-only.
 
+**Cached-verdict short-circuit.** Before dispatching the reviewer for round `N`, check `envelope.history` for an entry whose `round == N`. If one exists — typically because a prior slot ran the reviewer in dry-run and the manager did not get to publish — skip the `Agent` call, log `reusing cached verdict from round N (skipped reviewer dispatch)`, and proceed to consume the verdict as if the reviewer had just returned. This keeps token cost off the second slot when the first slot already produced a valid verdict but did not post. `costs` still gets a zero-token row for the reviewer so the ledger reflects the reuse. The same rule applies for the coder / tester / docs on any round they already have artifacts committed for, though in practice only the reviewer benefits — those roles produce commits, not opinions, and re-running them is usually cheap or necessary.
+
 For every subagent call you:
 
 1. Re-read the envelope after the subagent returns (for reviewer, envelope is unchanged; parse the verdict block from the returned text and append to `history`).

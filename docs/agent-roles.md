@@ -68,6 +68,14 @@ Every handoff carries this JSON envelope, persisted to `workspace/.state/<repo>/
     "commit_log":           "abcd123 fix: ...\n...",
     "diff_path":            "workspace/.state/kairos-io_kairos/1234/diff.patch",
     "linked_issue_bodies":  { "kairos-io/kairos#4200": "..." },
+    "action_pins":          {
+      "github/codeql-action": {
+        "tag":          "v4.37.7",
+        "claimed_sha":  "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd",
+        "resolved_sha": "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd",
+        "matches":      true
+      }
+    },
     "third_party":          false
   },
   "history": [

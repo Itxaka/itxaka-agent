@@ -90,6 +90,11 @@ The reviewer's tool set is `Read, Grep, Glob` — no `Bash`, no `Write`. Any com
 - `commit_log`: `git -C workspace/<repo> log --oneline upstream/<base>..<branch>`.
 - `diff_path`: full diff written to `workspace/.state/<owner>_<repo>/<n>/diff.patch` via `git -C workspace/<repo> diff upstream/<base>...<branch> > <path>`.
 - `linked_issue_bodies`: a `{ "owner/repo#n": "<body>" }` map for every issue / PR referenced from the ticket description. Use `gh issue view` / `gh pr view` (reads only).
+- `action_pins`: **only when the diff touches a `uses:` line pinned to a 40-char SHA with a `# <tag>` comment** — resolve the tag against the upstream action repo and record whether the pin is honest. For every such changed line in the diff:
+  ```
+  git ls-remote --tags https://github.com/<action_owner>/<action_repo> <tag>^{}
+  ```
+  Record `{ "<action_owner>/<action_repo>": { "tag": "<tag>", "claimed_sha": "<sha in diff>", "resolved_sha": "<sha from ls-remote>", "matches": <bool> } }`. Also resolve the pin being replaced (from the `-` side of the diff) so the reviewer can confirm the previous pin was honest too. If `ls-remote` fails (network hiccup, unknown repo), record `resolved_sha: null` and let the reviewer flag it.
 - `third_party`: already set above.
 
 Re-run this collection at the start of every reviewer round — later rounds see rebased branches and new comments.

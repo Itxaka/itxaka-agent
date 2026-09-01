@@ -14,6 +14,7 @@ PRAGMA foreign_keys = ON;
 -- One row per manager invocation.
 CREATE TABLE IF NOT EXISTS slots (
   slot_id         TEXT PRIMARY KEY,          -- ISO ts + short rand suffix
+  seq             INTEGER,                   -- monotonic per-DB counter, assigned on INSERT
   started_at      TEXT NOT NULL,             -- ISO 8601 UTC
   ended_at        TEXT,
   wall_ms         INTEGER,
@@ -24,6 +25,13 @@ CREATE TABLE IF NOT EXISTS slots (
   gated_calls     INTEGER NOT NULL DEFAULT 0,
   envelope_writes INTEGER NOT NULL DEFAULT 0
 );
+
+-- Migration for databases created before `seq` existed. SQLite has no
+-- `ADD COLUMN IF NOT EXISTS`, so this errors cosmetically once the column
+-- is in place; sqlite3(1) does not `.bail` on that by default, and the rest
+-- of the schema keeps applying. Backfill old rows with
+-- `scripts/backfill-slot-seq.py` after the first init on an old DB.
+ALTER TABLE slots ADD COLUMN seq INTEGER;
 
 -- Dimension: one row per ticket the fleet has ever touched.
 CREATE TABLE IF NOT EXISTS tickets (
@@ -135,6 +143,7 @@ CREATE INDEX IF NOT EXISTS idx_events_ticket ON events(ticket_ref);
 CREATE INDEX IF NOT EXISTS idx_events_ts     ON events(ts);
 CREATE INDEX IF NOT EXISTS idx_slots_ticket  ON slots(ticket_ref);
 CREATE INDEX IF NOT EXISTS idx_slots_started ON slots(started_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_slots_seq ON slots(seq);
 CREATE INDEX IF NOT EXISTS idx_costs_slot    ON costs(slot_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_slot ON artifacts(slot_id);
 CREATE INDEX IF NOT EXISTS idx_worker_reports_slot ON worker_reports(slot_id);

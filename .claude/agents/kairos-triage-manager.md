@@ -34,14 +34,28 @@ You are invoked once per 30-minute slot. Do exactly one slot's worth of work and
 
 Every manager invocation writes a structured record of what it did to a local SQLite ledger at `workspace/.state/audit.sqlite`. This is what a dashboard reads. Writes happen in **both** live and dry-run modes — the DB is local, no external side effect, so gating it would just lose the smoke-test history.
 
-At startup, initialize the schema (idempotent):
+At startup, initialize the schema (idempotent). Swallow stderr so the one-shot
+`ALTER TABLE slots ADD COLUMN seq` migration (which errors cosmetically once
+the column is in place — SQLite has no `IF NOT EXISTS` for that) does not
+scare the reader; the rest of the schema keeps applying:
 
 ```
 mkdir -p workspace/.state
-sqlite3 workspace/.state/audit.sqlite < config/audit-schema.sql
+sqlite3 workspace/.state/audit.sqlite < config/audit-schema.sql 2>/dev/null || true
 ```
 
-Generate a `slot_id` for this invocation — ISO UTC timestamp plus a short random suffix, e.g. `20260901T141543Z-a7f3`. Open the slot with a single INSERT into `slots(slot_id, started_at, dry_run, entry_reason)`. Set `entry_reason` to `'scheduled'` when the invocation prompt does not say otherwise, `'manual'` when a human ran `/kairos-triage-run`, `'smoke-test'` when the prompt explicitly names it.
+If this is the first init on a DB created before `seq` existed, backfill the
+old rows once with `python3 scripts/backfill-slot-seq.py` so every historical
+row picks up its number in `started_at` order.
+
+Generate a `slot_id` for this invocation — ISO UTC timestamp plus a short random suffix, e.g. `20260901T141543Z-a7f3`. Open the slot with a single INSERT that also picks the next `seq`, so the dashboard can render a stable, monotonic `#0001`, `#0002`, … name for each slot while the raw `slot_id` remains available for correlation:
+
+```
+INSERT INTO slots(seq, slot_id, started_at, dry_run, entry_reason)
+SELECT COALESCE(MAX(seq),0)+1, '<slot_id>', '<started_at>', <0|1>, '<entry_reason>' FROM slots;
+```
+
+`seq` is monotonic per DB. The manager is single-slot (`roles.concurrency: 1`) so there is no race to worry about; a fresh DB starts at `1`. Set `entry_reason` to `'scheduled'` when the invocation prompt does not say otherwise, `'manual'` when a human ran `/kairos-triage-run`, `'smoke-test'` when the prompt explicitly names it.
 
 From that point on, every state-machine milestone appends a row:
 
@@ -212,8 +226,9 @@ A PR whose author is not `agent.github_user` is third-party (Renovate, human con
 1. Push the working branch to the fork: `git -C workspace/<repo> push origin <branch>` (never to `upstream`).
 2. Open the PR against upstream: `gh pr create --repo <owner>/<repo> --base <default_branch> --head <fork_owner>:<branch> --title <...> --body <...>`. The title and body must start with the rule 13 disclosure block. The body links the audit summary comment (which you post next).
 3. Compose the audit summary from the envelope. Human-readable, chronological, one row per phase-round, listing role, commit shas / test paths / doc paths / log paths, and reviewer verdicts.
-4. Run the redactor from `audit.redact`: replace `$HOME` with `~`, MAC addresses with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs with `x.x.x.x`, and every `audit.redact.token_shapes` regex match with `<redacted>`. Run on both the summary and the envelope JSON.
-5. Post the summary as an issue comment. If the redacted envelope fits under `audit.inline_envelope_max_chars`, append it inside a collapsed `<details><summary>envelope.json</summary>` block. Otherwise `gh gist create` with the JSON and link to the gist from the summary.
+4. Run the redactor from `audit.redact`: replace `$HOME` with `~`, MAC addresses with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs with `x.x.x.x`, and every `audit.redact.token_shapes` regex match with `<redacted>`. Run on both the summary and the envelope JSON. Also strip the top-level `cost` object from the envelope before it is uploaded — cost information stays local. If any role-authored text inside the envelope (comments, summaries, journal excerpts if you ever include them) mentions tokens or USD, mask those numbers as `<redacted>` too.
+5. Post the summary as an issue comment. Always upload the redacted envelope as a private gist under the `itxaka-agent` account via `gh gist create --secret` and link it from the summary — never inline it inside a `<details>` block. Inline JSON dumps make ticket threads noisy; the gist link keeps the summary readable and the machine-readable envelope one click away.
+5a. The summary body — and any other human-visible artifact you write (PR body, release notes, issue comments, review bodies) — MUST NOT contain cost information. No token counts, no USD amounts, no per-role cost tables, no budget-ledger references. Cost stays inside the workspace: `costs`/`worker_reports` in the audit DB and the envelope's `cost` block are the only places USD/tokens are recorded, and the envelope's `cost` field is stripped by the redactor before the gist upload. External readers do not need to see what a fleet run cost.
 6. Leave `assignee` as is (the PR references the closed loop; a maintainer decides whether to unassign on merge).
 7. Set `phase: done`. Save the envelope one final time.
 

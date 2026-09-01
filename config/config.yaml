@@ -95,28 +95,10 @@ roles:
   # single-ticket queue. Raise later once the runtime is proven.
   concurrency: 1
 
-  # Per-role runtime knobs. Model choice is per role (rule 22). Defaults
-  # reflect the workload weight of each role.
-  runtimes:
-    manager:
-      model: claude-sonnet-5
-      timeout_minutes: 5
-    coder:
-      model: claude-opus-5
-      timeout_minutes: 20
-    tester:
-      # QEMU boots take time; the tester also drives the repro VM.
-      model: claude-sonnet-5
-      timeout_minutes: 45
-    docs:
-      model: claude-haiku-4-5
-      timeout_minutes: 10
-    reviewer:
-      # Structurally independent already via subprocess isolation. Model
-      # is deliberately configurable so the operator can widen the
-      # perspective gap by picking a different family from the coder.
-      model: claude-opus-5
-      timeout_minutes: 10
+  # Model choice per role is defined in the agent frontmatter of each
+  # `.claude/agents/kairos-triage-<role>.md` file, since that is what
+  # Claude Code actually reads when spawning the subagent. See
+  # docs/claude-code-integration.md.
 
 # Global cost budget with a rolling window. See RULES.md rule 21. Per-ticket
 # caps are the wrong tool here — some tickets legitimately cost more than

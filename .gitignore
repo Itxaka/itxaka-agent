@@ -2,6 +2,12 @@
 workspace/*
 !workspace/.gitkeep
 
+# Global ~/.gitignore excludes .claude/ (per-user settings in most projects).
+# In THIS project, .claude/ is the source of the agent fleet — untrack the
+# global rule so agents/ and skills/ ship in the repo.
+!.claude/
+!.claude/**
+
 # Local overrides — real config with tokens, per-machine tweaks.
 config/config.local.yaml
 config/rules.local.yaml

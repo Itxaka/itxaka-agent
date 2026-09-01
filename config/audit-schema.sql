@@ -87,6 +87,24 @@ CREATE TABLE IF NOT EXISTS costs (
   ts         TEXT NOT NULL
 );
 
+-- Full prose report from a worker's own hand — free-form journal written
+-- by the role during its work, slurped by the manager after the subagent
+-- returns and inserted here verbatim. This is the retrospective tail:
+-- what the role thought it was doing, why, and what it noticed along the way.
+-- Manager still owns the INSERT (rule 17); the row is a projection of the
+-- role's on-disk journal file, which is the source of truth.
+CREATE TABLE IF NOT EXISTS worker_reports (
+  report_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot_id     TEXT NOT NULL REFERENCES slots(slot_id),
+  ticket_ref  TEXT NOT NULL,
+  role        TEXT NOT NULL,                 -- 'coder'|'tester'|'docs'|'reviewer'
+  round       INTEGER NOT NULL,
+  return_text TEXT,                          -- the subagent's final text
+  journal     TEXT,                          -- contents of the journal file, or null if absent
+  journal_path TEXT,                         -- path relative to project root
+  ts          TEXT NOT NULL
+);
+
 -- Every mutating command suppressed in dry-run mode.
 CREATE TABLE IF NOT EXISTS gated_calls (
   gated_id   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,3 +121,5 @@ CREATE INDEX IF NOT EXISTS idx_slots_ticket  ON slots(ticket_ref);
 CREATE INDEX IF NOT EXISTS idx_slots_started ON slots(started_at);
 CREATE INDEX IF NOT EXISTS idx_costs_slot    ON costs(slot_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_slot ON artifacts(slot_id);
+CREATE INDEX IF NOT EXISTS idx_worker_reports_slot ON worker_reports(slot_id);
+CREATE INDEX IF NOT EXISTS idx_worker_reports_ticket ON worker_reports(ticket_ref);

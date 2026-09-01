@@ -72,6 +72,10 @@ Same rules as the coder: `itxaka-agent` identity override on every commit, manda
 - No touching `main` or `master`.
 - No running untrusted PR code on the host. Every unknown code path executes inside QEMU.
 
+## Journal (write this before returning)
+
+Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/journals/tester-round<N>.md`. Prose, in your own words: what you tested, what the suite said, what the VM behaved like, what you decided not to test and why. The manager slurps this into the audit DB as the retrospective tail; a human reads it later to understand your reasoning. It replaces nothing — the envelope updates and the return summary are still required.
+
 ## What you write back
 
 - Update `envelope.artifacts.{tests,commits,logs,screendumps}`.

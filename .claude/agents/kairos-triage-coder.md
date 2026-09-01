@@ -49,6 +49,10 @@ Match the target repo's commit style. Kairos and its friends use conventional-co
 
 Never push. `git push` is the manager's job.
 
+## Journal (write this before returning)
+
+Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/journals/coder-round<N>.md`. Prose, in your own words: what you read, what you tried, what surprised you, what you deliberately did not do and why. The manager slurps this into the audit DB as the retrospective tail; a human reads it later to understand your reasoning. It replaces nothing — the envelope updates and the return summary are still required.
+
 ## What you write back
 
 Update the envelope in place:

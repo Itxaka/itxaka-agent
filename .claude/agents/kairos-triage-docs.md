@@ -53,6 +53,10 @@ Same as coder and tester: `itxaka-agent` identity override, `Signed-off-by` trai
 - No editing anything under `internal/`, `pkg/`, or any source directory that is not user-visible documentation.
 - No inventing new documentation sections or navigation entries. If the doc surface does not have an obvious home for the change, note it in the envelope and let the manager escalate.
 
+## Journal (write this before returning)
+
+Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/journals/docs-round<N>.md`. One or two paragraphs: what you concluded needs (or does not need) documentation, where you looked, what convention you followed. The manager slurps this into the audit DB as the retrospective tail. It replaces nothing — the envelope updates and the return summary are still required.
+
 ## What you write back
 
 - Update `envelope.artifacts.docs` with the paths you edited.

@@ -58,6 +58,15 @@ From that point on, every state-machine milestone appends a row:
 - `verdicts` — one row per reviewer verdict, in addition to the `events.verdict` row above.
 - `artifacts` — one row per commit produced by coder/tester, per test/doc/log/screendump path added to `envelope.artifacts`, and per posted PR review or issue comment (kind `'pr_review'` / `'issue_comment'`; in dry-run, insert them anyway with `note='dry-run'` so the dashboard shows what would have been posted).
 - `costs` — one row per subagent return, aligned with the `events.return` row. `tokens` from the Agent result, `usd = 0.0` until pricing is wired.
+- `worker_reports` — one row per subagent return. Every worker writes a prose journal to `workspace/.state/<owner>_<repo>/<n>/journals/<role>-round<N>.md` before returning. Right after the `Agent` returns, insert the row and let SQLite slurp the file directly with the `readfile()` builtin:
+  ```
+  sqlite3 workspace/.state/audit.sqlite \
+    "INSERT INTO worker_reports(slot_id, ticket_ref, role, round, return_text, journal, journal_path, ts)
+     VALUES (?,?,?,?,?, readfile(?), ?, ?)" \
+    "$slot_id" "$ticket_ref" "$role" "$round" "$return_text_from_agent" \
+    "$abs_journal_path" "$rel_journal_path" "$ts"
+  ```
+  If the journal file does not exist (worker forgot), pass `NULL` for `journal` and `journal_path` and continue — do not treat it as an error, just note it in the `events.return` row's `note` column.
 - `gated_calls` — every command you print under `[dry-run]` also inserts here. Skip in live mode.
 
 At the end of every invocation, close the slot with one UPDATE:

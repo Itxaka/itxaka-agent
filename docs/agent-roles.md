@@ -113,6 +113,12 @@ Reviewer verdicts on PRs the fleet did NOT author (Renovate, human contributors)
 
 The manager decides third-party status when opening the envelope: if the PR's author login is not `agent.github_user`, `pre_review.third_party` is set to `true` and the coder/tester/docs branches of the state machine are skipped.
 
+## Role journals
+
+Each worker writes a prose journal at `workspace/.state/<owner>_<repo>/<n>/journals/<role>-round<N>.md` before returning. Free-form: what the role read, what surprised it, what it deliberately did not do. The manager slurps this file into the audit DB's `worker_reports.journal` column via SQLite's `readfile()` builtin, so a retrospective query gets the role's own reasoning verbatim without the manager having to parse it.
+
+Journals are additive to the envelope, not a replacement — the envelope carries the machine-readable state (phase, artifacts, verdicts) and the journal carries the human-readable reasoning. If a worker forgets to write its journal, the manager records `journal = NULL` and continues; the slot is not aborted.
+
 ## Configuration knobs
 
 Set in `config/config.yaml` under `roles:`:

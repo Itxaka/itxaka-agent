@@ -98,6 +98,30 @@ roles:
     docs:     { timeout_minutes: 10, token_budget: null }
     reviewer: { timeout_minutes: 10, token_budget: null }
 
+# Audit trail publication. See RULES.md rule 20.
+audit:
+  # Where the summary lives. Currently: a comment on the issue, with the PR
+  # description linking to it. Kept as an enum so a future gist-only or
+  # PR-body variant is a config change, not a code change.
+  target: issue_comment
+
+  # Attach the raw envelope inline (fenced in a collapsed <details> block)
+  # when it fits under this many characters. Larger envelopes go to a gist
+  # under the itxaka-agent account and are linked from the summary.
+  inline_envelope_max_chars: 40000
+
+  # Redaction applied to both the summary and the raw envelope before
+  # anything leaves the workspace. Rule 20.
+  redact:
+    home_paths:    true       # $HOME -> ~
+    mac_addresses: true       # xx:xx:xx:xx:xx:xx
+    public_ips:    true       # non-loopback / non-RFC1918 / non-documentation
+    token_shapes:
+      - '(?i)ghp_[A-Za-z0-9]{20,}'
+      - '(?i)github_pat_[A-Za-z0-9_]{20,}'
+      - '(?i)aws(.{0,20})?(secret|access).{0,5}=?\s*[A-Za-z0-9/+=]{20,}'
+      - '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+
 # Repositories the agent watches. Order is significant: earlier entries are
 # scanned first each cycle, so put the highest-signal repos on top.
 repositories:

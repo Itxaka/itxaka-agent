@@ -83,7 +83,7 @@ Every handoff carries this JSON envelope, persisted to `workspace/.state/<repo>/
                                     [escalated] --> human
 ```
 
-`intake` is where the manager picks up the ticket. `manager-final` is where the manager pushes the branch to the fork, opens the PR, links it from the issue, and clears `in-progress`. `escalated` is the safety valve required by rule 18.
+`intake` is where the manager picks up the ticket. `manager-final` is where the manager pushes the branch to the fork, opens the PR, publishes the audit trail (rule 20 — human-readable summary comment plus the redacted envelope, either inline or as a gist), links the PR from the issue, and clears `in-progress`. `escalated` is the safety valve required by rule 18; it also publishes the audit trail so the human picking up the ticket sees everything the roles produced.
 
 ## Configuration knobs
 

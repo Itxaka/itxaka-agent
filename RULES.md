@@ -207,3 +207,18 @@ Two properties this guarantees:
 - **Human inspectability.** A maintainer who wants to understand why the agent did something reads the envelope directly; there is no hidden agent-to-agent chatter.
 
 Workers must not carry state across tickets in memory. The envelope on disk is the source of truth.
+
+## 20. Publish the audit trail with the PR
+
+When the manager reaches `manager-final` and opens the PR — or when it escalates per rule 18 — it publishes the envelope onto the ticket so a human can retrace exactly what each role did.
+
+Two artifacts leave the workspace at this step:
+
+1. **Human-readable summary** — a comment on the issue, chronologically ordered by phase and round. Every entry names the role, the time, the artifact it produced (files, commits, tests, logs), and, for review rounds, the reviewer's verdict and comments. This is prose a maintainer can skim without decoding JSON.
+2. **Machine-readable envelope** — the full `envelope.json`. When it fits under `audit.inline_envelope_max_chars`, it ships inline inside a collapsed `<details>` block on the summary comment. Otherwise the manager uploads it as a gist under the `itxaka-agent` account and links it from the summary.
+
+The PR description carries a link to the summary comment.
+
+**Redaction is mandatory.** Before either artifact leaves the workspace, the manager runs both through the redactor: `$HOME` paths are collapsed to `~`, MAC addresses are replaced with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs are replaced with `x.x.x.x`, and any string matching the token-shape patterns in `config/config.yaml` is replaced with `<redacted>`. Nothing published, ever, without the filter.
+
+On escalation the same publication happens with `phase: escalated` — the outgoing comment shows the disagreement in full and links to the fork branch, so the human picking up the ticket has every artifact the roles produced.

@@ -23,3 +23,6 @@ config/rules.local.yaml
 /dist/
 *.exe
 *.test
+
+# Generated dashboard output. Regenerate via `dashboard/generate.sh`.
+/dashboard/*.html

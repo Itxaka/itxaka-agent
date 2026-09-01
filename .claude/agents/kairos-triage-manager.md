@@ -48,12 +48,14 @@ If this is the first init on a DB created before `seq` existed, backfill the
 old rows once with `python3 scripts/backfill-slot-seq.py` so every historical
 row picks up its number in `started_at` order.
 
-Generate a `slot_id` for this invocation — ISO UTC timestamp plus a short random suffix, e.g. `20260901T141543Z-a7f3`. Open the slot with a single INSERT that also picks the next `seq`, so the dashboard can render a stable, monotonic `#0001`, `#0002`, … name for each slot while the raw `slot_id` remains available for correlation:
+Generate a `slot_id` for this invocation — ISO UTC timestamp plus a short random suffix, e.g. `20260901T141543Z-a7f3` — but do NOT insert the `slots` row yet. **Idle slots are not recorded.** Only insert the row once you know you are going to do real work: as soon as you decide to pick a ticket (either an in-flight envelope or a fresh pick), issue this INSERT:
 
 ```
 INSERT INTO slots(seq, slot_id, started_at, dry_run, entry_reason)
 SELECT COALESCE(MAX(seq),0)+1, '<slot_id>', '<started_at>', <0|1>, '<entry_reason>' FROM slots;
 ```
+
+If the slot exits before that decision — outside working window, hard budget cap, no ticket qualifies, nothing in-flight and nothing to pick — write a one-line summary to stdout and exit successfully WITHOUT any DB write. The cron log already proves the scheduler is alive; storing a row per idle tick is just clutter in the dashboard.
 
 `seq` is monotonic per DB. The manager is single-slot (`roles.concurrency: 1`) so there is no race to worry about; a fresh DB starts at `1`. Set `entry_reason` to `'scheduled'` when the invocation prompt does not say otherwise, `'manual'` when a human ran `/kairos-triage-run`, `'smoke-test'` when the prompt explicitly names it.
 
@@ -88,18 +90,20 @@ SQL
   Only shell-safe values (slot_id, ticket_ref, role, round, ts, paths without single quotes) go inline; all free-form TEXT arrives through `readfile()` on a temp file. Same pattern for any other INSERT where a value could contain newlines, quotes, or backticks — commit messages, comment bodies, verdict comment text, gated-call command strings all deserve this treatment. If the journal file is missing, `readfile()` would error, so branch as shown above and let `journal` be `NULL` — do not treat missing journal as slot failure, just note it in the `events.return` row's `note` column.
 - `gated_calls` — every command you print under `[dry-run]` also inserts here. Skip in live mode.
 
-At the end of every invocation, close the slot with one UPDATE:
+At the end of every invocation THAT INSERTED A SLOT ROW, close the slot with one UPDATE:
 
 ```
 UPDATE slots SET
   ended_at = <ISO now>,
   wall_ms = <elapsed>,
-  ticket_ref = <the ticket you worked, or null>,
-  outcome = <'done'|'awaiting-author'|'escalated'|'in-flight'|'idle'|'error'>,
+  ticket_ref = <the ticket you worked>,
+  outcome = <'done'|'awaiting-author'|'escalated'|'in-flight'|'error'>,
   gated_calls = <count>,
   envelope_writes = <count>
 WHERE slot_id = <this slot>;
 ```
+
+`'idle'` is no longer a valid outcome — an idle exit never inserts a row in the first place, so there is nothing to update. If a slot inserted a row but then blew up before doing meaningful work (network failure fetching state, subagent failed to start), close it with `outcome='error'` and a `note` describing what broke; do not leave `ended_at` null.
 
 DB write shape: use the `sqlite3 workspace/.state/audit.sqlite` binary with `-cmd ".parameter set …"` and parameterized SQL when the value could contain quotes or newlines, or the `.import` command with a tab-separated stdin. Never build SQL by string concatenation for values that could contain unbalanced quotes.
 

@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS slots (
   dry_run         INTEGER NOT NULL DEFAULT 0,
   ticket_ref      TEXT,                      -- owner/repo#n, null when idle
   entry_reason    TEXT,                      -- 'scheduled' | 'manual' | 'smoke-test'
-  outcome         TEXT,                      -- 'done' | 'awaiting-author' | 'escalated' | 'in-flight' | 'idle' | 'error'
+  outcome         TEXT,                      -- 'done' | 'awaiting-author' | 'escalated' | 'in-flight' | 'error' (idle exits are NOT recorded)
   gated_calls     INTEGER NOT NULL DEFAULT 0,
   envelope_writes INTEGER NOT NULL DEFAULT 0
 );

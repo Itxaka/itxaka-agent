@@ -1,0 +1,31 @@
+# Model pricing used by the manager to fill in `costs.usd` and the rolling
+# budget ledger. This is a safety rail, not billing — hand-edit when Anthropic
+# publishes new rates.
+#
+# The Agent tool returns a single `subagent_tokens` number (input + output
+# combined), not a split. To estimate USD we compute a blended per-token rate:
+#
+#   blended = input * (1 - blend_ratio_output) + output * blend_ratio_output
+#   usd     = tokens / 1_000_000 * blended
+#
+# `blend_ratio_output` defaults to 0.2 (a coding subagent typically reads more
+# than it writes; 20% output is a slight over-estimate, which errs on the safe
+# side for budget-cap purposes).
+
+blend_ratio_output: 0.2
+
+# Rates are USD per 1,000,000 tokens. Aliases (opus, sonnet, haiku, fable) match
+# the `model:` frontmatter values in `.claude/agents/kairos-triage-*.md`.
+models:
+  opus:
+    input:  15.00
+    output: 75.00
+  sonnet:
+    input:   3.00
+    output: 15.00
+  haiku:
+    input:   1.00
+    output:  5.00
+  fable:
+    input:   0.80
+    output:  4.00

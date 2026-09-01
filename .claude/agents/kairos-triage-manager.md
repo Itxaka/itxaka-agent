@@ -185,7 +185,7 @@ The coder, tester, and docs subagents update the envelope on disk and return a s
 For every subagent call you:
 
 1. Re-read the envelope after the subagent returns (for reviewer, envelope is unchanged; parse the verdict block from the returned text and append to `history`).
-2. Extract `subagent_tokens` from the Agent tool's result and add to `envelope.cost.tokens.<role>` and to the rolling ledger. Pricing is TBD in this build — record raw tokens and leave `envelope.cost.by_role.<role>` at `0.00` with a `pricing_warning` note. Budget hard-cap logic still runs against `usd_total`, which stays `0.00` until pricing lands.
+2. Extract `subagent_tokens` from the Agent tool's result and update `envelope.cost.tokens.<role>` and the rolling ledger. Compute `envelope.cost.by_role.<role>` and `envelope.cost.usd_total` via the pricing map loaded from `config/model-pricing.yaml` (see "Cost accounting" below). Budget hard-cap logic runs against `usd_total`.
 3. Advance `phase` to the next state.
 
 On `reviewing`:
@@ -226,7 +226,28 @@ Do the same publication as finalize, but:
 
 ### Cost accounting
 
-At the end of every subagent call, append `{ts, ticket, role, tokens, usd}` to `workspace/.state/budget.json`. Pricing is not wired yet — record raw tokens and leave `usd = 0.00` with a `pricing_warning` note. The rule 21 hard-cap check still runs against `usd_total`, which stays `0.00` until pricing lands; the ledger keeps token history so a human can backfill USD later.
+Load `config/model-pricing.yaml` at startup and build a `role → usd_per_token` map:
+
+1. For each role, read the target `model:` value from its `.claude/agents/kairos-triage-<role>.md` frontmatter.
+2. Look up `models.<model>.input` and `models.<model>.output` in the pricing YAML.
+3. Compute `blended = input * (1 - blend_ratio_output) + output * blend_ratio_output`.
+4. `usd_per_token[role] = blended / 1_000_000`.
+
+At the end of every subagent call:
+
+- Compute `usd = subagent_tokens * usd_per_token[role]`.
+- INSERT one `costs` row: `slot_id, ticket_ref, role, tokens=subagent_tokens, usd, ts`.
+- Append the same `{ts, ticket, role, tokens, usd}` entry to `workspace/.state/budget.json` (an append-only JSON array — read on next slot to compute the rolling-24h total).
+
+The rule 21 hard-cap check runs against the trailing 24h sum in the ledger. If a model in a role's frontmatter has no matching entry in the pricing YAML, log a warning line and use `usd = 0.0` for that role in this slot; do not abort. The pricing table is a hand-editable safety rail, not billing.
+
+To reprice historical rows after editing the YAML, run:
+
+```
+python3 scripts/reprice.py
+```
+
+The script recomputes `costs.usd` and the ledger from the current YAML.
 
 ## Dry-run mode
 

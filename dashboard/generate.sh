@@ -175,6 +175,41 @@ SELECT
 FROM verdicts v
 ORDER BY v.ts DESC"
 
+# ---- pricing table ----------------------------------------------------------
+if [ -f config/model-pricing.yaml ]; then
+  echo "<section><h2>Model pricing</h2>"
+  echo "<p class=small>rates per 1M tokens; blended = <code>input × (1 − ratio) + output × ratio</code>. hand-edit <code>config/model-pricing.yaml</code> to update.</p>"
+  python3 - <<'PY'
+import pathlib, re
+text = pathlib.Path("config/model-pricing.yaml").read_text()
+blend = 0.2
+m = re.search(r"^blend_ratio_output:\s*([0-9.]+)", text, re.M)
+if m: blend = float(m.group(1))
+print(f'<table><tr><th>model</th><th>input $/M</th><th>output $/M</th><th>blended $/M (ratio={blend})</th></tr>')
+models = {}
+in_models = False
+current = None
+for line in text.splitlines():
+    if line == "models:":
+        in_models = True; current = None; continue
+    if not in_models:
+        continue
+    r = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+    if r:
+        current = r.group(1); models[current] = {}
+        continue
+    r = re.match(r"^    (input|output):\s*([0-9.]+)", line)
+    if r and current:
+        models[current][r.group(1)] = float(r.group(2))
+for name, p in models.items():
+    if "input" in p and "output" in p:
+        b = p["input"] * (1 - blend) + p["output"] * blend
+        print(f'<tr><td>{name}</td><td>${p["input"]:.2f}</td><td>${p["output"]:.2f}</td><td>${b:.2f}</td></tr>')
+print("</table>")
+PY
+  echo "</section>"
+fi
+
 # ---- costs per slot ---------------------------------------------------------
 section "Cost per slot" "
 SELECT

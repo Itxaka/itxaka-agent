@@ -58,15 +58,19 @@ From that point on, every state-machine milestone appends a row:
 - `verdicts` — one row per reviewer verdict, in addition to the `events.verdict` row above.
 - `artifacts` — one row per commit produced by coder/tester, per test/doc/log/screendump path added to `envelope.artifacts`, and per posted PR review or issue comment (kind `'pr_review'` / `'issue_comment'`; in dry-run, insert them anyway with `note='dry-run'` so the dashboard shows what would have been posted).
 - `costs` — one row per subagent return, aligned with the `events.return` row. `tokens` from the Agent result, `usd = 0.0` until pricing is wired.
-- `worker_reports` — one row per subagent return. Every worker writes a prose journal to `workspace/.state/<owner>_<repo>/<n>/journals/<role>-round<N>.md` before returning. Right after the `Agent` returns, insert the row and let SQLite slurp the file directly with the `readfile()` builtin:
+- `worker_reports` — one row per subagent return. Every worker writes a prose journal to `workspace/.state/<owner>_<repo>/<n>/journals/<role>-round<N>.md` before returning. Right after the `Agent` returns, INSERT the row using SQLite's `readfile()` builtin for the two large TEXT fields — the CLI's argv `?` binding does not carry multi-line values reliably, so drop them into temp files and read them back with `readfile()`:
   ```
-  sqlite3 workspace/.state/audit.sqlite \
-    "INSERT INTO worker_reports(slot_id, ticket_ref, role, round, return_text, journal, journal_path, ts)
-     VALUES (?,?,?,?,?, readfile(?), ?, ?)" \
-    "$slot_id" "$ticket_ref" "$role" "$round" "$return_text_from_agent" \
-    "$abs_journal_path" "$rel_journal_path" "$ts"
+  rt=$(mktemp) && printf '%s' "$return_text_from_agent" > "$rt"
+  jf="$abs_journal_path"   # may or may not exist
+  jexpr=$([ -f "$jf" ] && echo "readfile('$jf')" || echo "NULL")
+  jpath=$([ -f "$jf" ] && echo "'$rel_journal_path'" || echo "NULL")
+  sqlite3 workspace/.state/audit.sqlite <<SQL
+  INSERT INTO worker_reports(slot_id, ticket_ref, role, round, return_text, journal, journal_path, ts)
+  VALUES ('$slot_id','$ticket_ref','$role',$round, readfile('$rt'), $jexpr, $jpath, '$ts');
+SQL
+  rm -f "$rt"
   ```
-  If the journal file does not exist (worker forgot), pass `NULL` for `journal` and `journal_path` and continue — do not treat it as an error, just note it in the `events.return` row's `note` column.
+  Only shell-safe values (slot_id, ticket_ref, role, round, ts, paths without single quotes) go inline; all free-form TEXT arrives through `readfile()` on a temp file. Same pattern for any other INSERT where a value could contain newlines, quotes, or backticks — commit messages, comment bodies, verdict comment text, gated-call command strings all deserve this treatment. If the journal file is missing, `readfile()` would error, so branch as shown above and let `journal` be `NULL` — do not treat missing journal as slot failure, just note it in the `events.return` row's `note` column.
 - `gated_calls` — every command you print under `[dry-run]` also inserts here. Skip in live mode.
 
 At the end of every invocation, close the slot with one UPDATE:
@@ -112,7 +116,7 @@ If nothing is in flight, and the hard cap is not tripped, pick one new ticket:
 4. Apply the pipeline (rule 8): `review_prs` first, `triage_issues` only if no PR needed review.
 5. Inside each stage, drain the priority set first, then fall back to everything else.
 6. Inside each candidate, apply `config/rules.yaml`:
-   - Skip anything assigned to a human that is not `agent.github_user` (rule 5).
+   - Skip anything assigned to a human that is not `agent.github_user` (rule 5). Self-assignment carve-out: if the assignee set is exactly `[<ticket_author>]`, treat the ticket as unassigned. If any assignee is neither the agent nor the author, skip.
    - Skip anything already labelled with rules-listed skip labels.
 7. Take exactly ONE ticket. Do not queue several — you are not concurrent.
 
@@ -146,6 +150,7 @@ The reviewer's tool set is `Read, Grep, Glob` — no `Bash`, no `Write`. Any com
 - `commit_log`: `git -C workspace/<repo> log --oneline upstream/<base>..<branch>`.
 - `diff_path`: full diff written to `workspace/.state/<owner>_<repo>/<n>/diff.patch` via `git -C workspace/<repo> diff upstream/<base>...<branch> > <path>`.
 - `linked_issue_bodies`: a `{ "owner/repo#n": "<body>" }` map for every issue / PR referenced from the ticket description. Use `gh issue view` / `gh pr view` (reads only).
+- `commit_trailers`: for every commit in `commit_log`, capture the full message and its parsed trailer block. Run `git -C workspace/<repo> show --no-patch --format='%H%n%B%n---END---' <sha>` for each SHA, then parse the trailer block (lines matching `^[A-Za-z-]+:` at the end of the message, no blank line breaks in between). Emit `[{ "sha": "<sha>", "subject": "<first line>", "trailers": { "Signed-off-by": ["..."], "Co-authored-by": ["..."] } }, ...]`. This lets the reviewer verify DCO compliance and check for `Co-authored-by` trailers that the operator's global config forbids without needing shell access.
 - `action_pins`: **only when the diff touches a `uses:` line pinned to a 40-char SHA with a `# <tag>` comment** — resolve the tag against the upstream action repo and record whether the pin is honest. For every such changed line in the diff:
   ```
   git ls-remote --tags https://github.com/<action_owner>/<action_repo> <tag>^{}

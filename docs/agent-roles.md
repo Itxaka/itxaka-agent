@@ -68,6 +68,13 @@ Every handoff carries this JSON envelope, persisted to `workspace/.state/<repo>/
     "commit_log":           "abcd123 fix: ...\n...",
     "diff_path":            "workspace/.state/kairos-io_kairos/1234/diff.patch",
     "linked_issue_bodies":  { "kairos-io/kairos#4200": "..." },
+    "commit_trailers":      [
+      {
+        "sha":       "abcd123...",
+        "subject":   "fix: ...",
+        "trailers":  { "Signed-off-by": ["Alice <a@example.com>"], "Co-authored-by": [] }
+      }
+    ],
     "action_pins":          {
       "github/codeql-action": {
         "tag":          "v4.37.7",

@@ -45,6 +45,8 @@ Silence is not allowed. Humans must be able to read the issue and know what the 
 
 If an issue or PR already has an assignee that is not the agent's own account, the agent leaves it alone — no comments, no takeover, no "helpful" suggestions. The only exception is when the assignee explicitly `@mentions` the agent asking for help.
 
+**Self-assignment carve-out.** A ticket whose sole assignee is its own author is treated as unassigned for this rule. The block exists to keep the agent off tickets a *different* human is already triaging, not to lock the fleet out of every human-authored PR (contributors routinely self-assign their own PRs). If the assignee set contains any login other than the ticket author, the rule applies as written.
+
 ## 6. Clone repositories into the workspace
 
 All repository work happens under `workspace/<repo>/`. The agent does not operate against paths outside this directory. Clones are the agent's fork, with the upstream added as a second remote named `upstream`.

@@ -93,9 +93,28 @@ Set in `config/config.yaml` under `roles:`:
 - `state_dir` — where envelopes are persisted; default `workspace/.state`.
 - Per-role runtime settings (model choice, token budget, timeout) live here as well and are filled in when the runtime is chosen.
 
-## Open questions
+## Decisions
 
-- **In-process vs subprocess roles.** Subprocesses give clean failure boundaries, per-role token budgets, and OS-level isolation for the tester's QEMU work. Cost: coordination complexity, IPC overhead. In-process is simpler but a runaway role can starve the others.
-- **Concurrency.** Should the manager keep a single ticket in flight or several? A single-ticket queue keeps rule 11 (slot alignment) trivial and reasoning about resource use easy. Multiple tickets need per-ticket slot budgets and per-repo lock discipline in the workspace.
-- **Cost caps.** A per-ticket or per-role token / wall-clock budget that trips an escalation instead of a runaway loop. Probably a good idea; exact numbers TBD.
-- **Reviewer independence.** The reviewer should not be the same underlying model instance as the coder in the same round — otherwise it is reviewing its own reasoning. Enforceable via role config.
+The design-phase open questions from an earlier draft are now locked in:
+
+- **Isolation.** Each role runs as its own **subprocess** (`roles.isolation: subprocess`). Clean crash boundaries, fresh LLM context per role, and structural reviewer independence. Rule 22.
+- **Concurrency.** The manager keeps **one ticket in flight** at a time (`roles.concurrency: 1`). Rule 11 slot alignment stays trivial. Raising this later is a config change plus per-repo workspace locking.
+- **Cost caps.** Budget is **global** over a rolling window, not per-ticket. Some tickets are expensive-but-legitimate; capping them individually would either strangle or miss. See rule 21 and `config/config.yaml` `budget:`.
+- **Reviewer independence.** Subprocess isolation already gives the reviewer a fresh context, so it never sees the coder's live reasoning. Model choice is per role (`roles.runtimes.<role>.model`) so an operator can further widen the perspective gap by picking a different model family for the reviewer.
+
+## Envelope cost accounting
+
+Envelopes carry a `cost` block that the manager updates as each role reports back. This drives the rolling-window ledger at `workspace/.state/budget.json` for rule 21.
+
+```json
+"cost": {
+  "usd_total": 1.23,
+  "by_role": {
+    "coder":    0.85,
+    "tester":   0.20,
+    "docs":     0.00,
+    "reviewer": 0.15,
+    "manager":  0.03
+  }
+}
+```

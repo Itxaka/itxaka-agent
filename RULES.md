@@ -222,3 +222,27 @@ The PR description carries a link to the summary comment.
 **Redaction is mandatory.** Before either artifact leaves the workspace, the manager runs both through the redactor: `$HOME` paths are collapsed to `~`, MAC addresses are replaced with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs are replaced with `x.x.x.x`, and any string matching the token-shape patterns in `config/config.yaml` is replaced with `<redacted>`. Nothing published, ever, without the filter.
 
 On escalation the same publication happens with `phase: escalated` — the outgoing comment shows the disagreement in full and links to the fork branch, so the human picking up the ticket has every artifact the roles produced.
+
+## 21. Global cost budget with a rolling window
+
+Ticket cost varies wildly — a doc typo is cents, a boot-flow bug with several QEMU reproduction cycles is dollars. A per-ticket cap would either strangle the expensive-but-legitimate work or leave the cheap work uncapped. The budget is therefore **global**, aggregated across every role and every ticket over a rolling window (default: 24 hours).
+
+Two thresholds:
+
+- **Soft cap** (`budget.usd_soft_cap`) — the first time the rolling total crosses it in a window, the manager writes a warning to the log. Work continues. This exists so a runaway is visible before the hard cap trips.
+- **Hard cap** (`budget.usd_cap`) — the manager finishes any in-flight ticket, publishes its audit trail per rule 20, and then stops picking up new work. The scheduler continues to run and its idle state is logged; slot boundaries still occur. New work resumes when the rolling total falls back below the hard cap as the window advances.
+
+The manager records cost per role per phase into `envelope.cost.by_role` and updates a persistent rolling-window ledger at `workspace/.state/budget.json`. The ledger survives restarts.
+
+## 22. Roles run as subprocesses; model is per role
+
+Every role runs in its own subprocess. Consequences:
+
+- A crashed role does not take down the manager or any sibling role.
+- Each role gets its own OS environment, own working directory, own timeout, own token accounting, and — critically — its own fresh LLM context. There is no shared conversation state across role invocations.
+- This subprocess boundary is what makes rule 19's envelope the only channel between roles. Nothing else survives across the boundary.
+- It also structurally satisfies reviewer independence: the reviewer never reads the coder's live context, only the artifacts the coder committed to the envelope.
+
+Model choice is per role, configured under `roles.runtimes.<role>.model`. The default assignments in `config/config.yaml` reflect the workload weight of each role. Operators may swap in different models — for example, deliberately picking a different model family for the reviewer to widen the perspective gap — without any code change.
+
+Concurrency stays at `roles.concurrency: 1` for now. Rule 11 slot alignment is easier to reason about with a single ticket in flight, and the workload volume does not yet justify parallelism. Raising it later is a config change plus a per-repo lock in the workspace.

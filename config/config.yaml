@@ -76,8 +76,13 @@ schedule:
   # Days of the week the agent runs on (0 = Sunday … 6 = Saturday).
   active_weekdays: [1, 2, 3, 4, 5]
 
-# Multi-role fleet. See docs/agent-roles.md and RULES.md rules 17-19.
+# Multi-role fleet. See docs/agent-roles.md and RULES.md rules 17-19, 22.
 roles:
+  # Each role runs in its own subprocess (rule 22). This gives clean crash
+  # boundaries, fresh LLM context per role, and structural reviewer
+  # independence from the coder.
+  isolation: subprocess
+
   # Hard cap on reviewer/worker rounds before the manager escalates.
   max_review_rounds: 3
 
@@ -85,18 +90,53 @@ roles:
   # audit trail a human reads to see what the roles said to each other.
   state_dir: workspace/.state
 
-  # How many tickets the manager keeps in flight at once. Start at 1
-  # while the fleet stabilizes; raise later if slot budgeting allows.
+  # How many tickets the manager keeps in flight at once. Kept at 1 while
+  # the fleet stabilizes; slot alignment (rule 11) is simpler with a
+  # single-ticket queue. Raise later once the runtime is proven.
   concurrency: 1
 
-  # Per-role runtime knobs. Filled in once the runtime is chosen; these
-  # are placeholders that document the shape.
+  # Per-role runtime knobs. Model choice is per role (rule 22). Defaults
+  # reflect the workload weight of each role.
   runtimes:
-    manager:  { timeout_minutes: 5,  token_budget: null }
-    coder:    { timeout_minutes: 20, token_budget: null }
-    tester:   { timeout_minutes: 45, token_budget: null }   # QEMU boots take time
-    docs:     { timeout_minutes: 10, token_budget: null }
-    reviewer: { timeout_minutes: 10, token_budget: null }
+    manager:
+      model: claude-sonnet-5
+      timeout_minutes: 5
+    coder:
+      model: claude-opus-5
+      timeout_minutes: 20
+    tester:
+      # QEMU boots take time; the tester also drives the repro VM.
+      model: claude-sonnet-5
+      timeout_minutes: 45
+    docs:
+      model: claude-haiku-4-5
+      timeout_minutes: 10
+    reviewer:
+      # Structurally independent already via subprocess isolation. Model
+      # is deliberately configurable so the operator can widen the
+      # perspective gap by picking a different family from the coder.
+      model: claude-opus-5
+      timeout_minutes: 10
+
+# Global cost budget with a rolling window. See RULES.md rule 21. Per-ticket
+# caps are the wrong tool here — some tickets legitimately cost more than
+# others — so the budget aggregates across every role and every ticket.
+budget:
+  # Window over which spend is aggregated. Anything older than this rolls off.
+  window: 24h
+
+  # Soft threshold — a warning is logged the first time it is crossed in a
+  # window. Work continues. Useful for spotting a runaway before the hard
+  # cap trips.
+  usd_soft_cap: 15.00
+
+  # Hard threshold — the manager finishes in-flight work, publishes its
+  # audit trail, then stops picking up new tickets until the rolling total
+  # falls back below this line as the window advances.
+  usd_cap: 20.00
+
+  # Persistent rolling-window ledger. Survives restarts.
+  ledger_path: workspace/.state/budget.json
 
 # Audit trail publication. See RULES.md rule 20.
 audit:

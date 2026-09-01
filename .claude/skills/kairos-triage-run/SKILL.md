@@ -39,6 +39,10 @@ Adjust the times to match `schedule.working_hours` in `config/config.yaml`. Adju
 
 ## Dry runs
 
-To exercise the pipeline without any GitHub side-effects, set `KAIROS_TRIAGE_DRY_RUN=1` in the environment before invoking. The manager reads this at startup: it still fetches GitHub state, still runs the rule engine, still updates the local envelope, but it does not `gh` any writes and does not `git push`. The audit trail is composed and printed to stdout instead of posted.
+To exercise the pipeline without any GitHub side-effects, set `KAIROS_TRIAGE_DRY_RUN=1` in the environment before invoking. The manager reads this at startup: it still fetches GitHub state, still runs the rule engine, still spawns worker subagents, and still updates the local envelope, but it does not `gh` any writes and does not `git push`. The composed audit trail is printed to stdout inside `--- BEGIN AUDIT (dry-run) ---` fences and appended to `workspace/.logs/dry-run-<ts>.log`. See the manager's "Dry-run mode" section for the exact set of gated calls.
 
-(Dry-run support in the manager is TBD until the manager code path exists — leaving this here so the entry point is documented.)
+In dry-run mode the working-window and hard-budget checks are downgraded to warnings so smoke tests can run at any hour.
+
+## Pinning a ticket for a smoke test
+
+Set `KAIROS_TRIAGE_PICK=<owner>/<repo>#<n>` alongside the dry-run flag to force the manager to work that exact ticket instead of walking the queue. Other rules still apply — the pinned ticket must not be assigned to a human and must not be skipped by `config/rules.yaml`.

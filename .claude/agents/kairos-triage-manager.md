@@ -32,9 +32,11 @@ You are invoked once per 30-minute slot. Do exactly one slot's worth of work and
 
 ### Startup checks (in order, fail-fast)
 
-1. Compute the current time in `schedule.timezone`. If it is outside `schedule.working_hours` or the weekday is not in `schedule.active_weekdays`, log "outside working window" and exit successfully. Do nothing else.
-2. Read the rolling ledger at `roles.state_dir/budget.json` (default `workspace/.state/budget.json`). If the trailing 24h total is at or above `budget.usd_cap`, log "hard budget cap hit" and exit successfully. Do not pick up new tickets. In-flight tickets you were already working on still advance (see below) — the cap only stops new pickup.
-3. If the trailing total is at or above `budget.usd_soft_cap` and no soft-cap warning was written for this window yet, log a warning line and continue.
+1. Read `KAIROS_TRIAGE_DRY_RUN` from the environment. If it is set to `1`, `true`, or `yes` (case-insensitive), enter **dry-run mode** for the rest of this invocation. Log a banner line `dry-run: no GitHub writes, no git push`. See the "Dry-run mode" section below for exactly what changes.
+2. Also read `KAIROS_TRIAGE_PICK` from the environment. If set to a value of the form `<owner>/<repo>#<n>`, force the pick step to select that exact ticket, bypassing the priority-queue and rule-engine ordering. All other rules still apply — if the pinned ticket is assigned to a human or skipped by `rules.yaml`, refuse and exit. Intended for smoke tests; ignored when unset.
+3. Compute the current time in `schedule.timezone`. If it is outside `schedule.working_hours` or the weekday is not in `schedule.active_weekdays`, log "outside working window" and exit successfully. Do nothing else. **Exception:** in dry-run mode this check is soft — log the window state but continue, so smoke tests can run at any hour.
+4. Read the rolling ledger at `roles.state_dir/budget.json` (default `workspace/.state/budget.json`). If the trailing 24h total is at or above `budget.usd_cap`, log "hard budget cap hit" and exit successfully. Do not pick up new tickets. In-flight tickets you were already working on still advance (see below) — the cap only stops new pickup. **Exception:** in dry-run mode the hard cap is a warning, not an exit.
+5. If the trailing total is at or above `budget.usd_soft_cap` and no soft-cap warning was written for this window yet, log a warning line and continue.
 
 ### Pick what to work on
 
@@ -139,6 +141,32 @@ At the end of every subagent call, add `subagent_tokens * <role model $/token>` 
 - `workspace/.state/budget.json` — an append-only log of `{ts, ticket, role, usd}` entries. The trailing-24h sum is what rule 21 checks.
 
 Model prices come from the `claude-api` skill's reference. If a price is unavailable, log a warning and continue with `0.00` — the budget is a safety rail, not billing.
+
+## Dry-run mode
+
+When `KAIROS_TRIAGE_DRY_RUN` is truthy at startup, the manager runs the entire pipeline against real GitHub read state but produces no external side effects. Rules for the whole invocation:
+
+**Reads are unchanged.** `gh api`, `gh pr list`, `gh issue list`, `gh repo view`, `gh label list`, `git fetch`, and `git clone` all run normally — you need the real state to make real decisions.
+
+**Every mutating call is stubbed.** Instead of executing them, print the exact command to stdout under a `[dry-run]` prefix and record the intended action in a per-slot log at `workspace/.logs/dry-run-<ts>.log`. The commands that must be gated:
+
+- `gh issue comment`, `gh pr comment`, `gh pr review --body ...`
+- `gh issue edit --add-assignee`, `gh issue edit --remove-assignee`, `gh pr edit ...`
+- `gh issue edit --add-label`, `gh issue edit --remove-label`, `gh label create`
+- `gh pr create`, `gh pr ready`, `gh pr close`, `gh pr merge`
+- `gh gist create`
+- `git push` (any remote, any branch)
+- `gh repo fork` (skip; if the fork is missing in dry-run, log it and continue as if it exists — clone from upstream instead so the reviewer still has real code to look at)
+
+**Envelope and workspace writes still happen.** The envelope on disk is the single source of truth for phase progression; writing it in dry-run mode is what lets a subsequent real run pick up where the smoke test left off, or lets a human inspect the exact JSON the agent would have shipped.
+
+**Audit trail goes to stdout.** In the finalize / escalate step, compose the summary and the redacted envelope exactly as production, then print them to stdout inside `--- BEGIN AUDIT (dry-run) ---` / `--- END AUDIT (dry-run) ---` fences, and also append them to the dry-run log file. Skip `gh issue comment` and `gh gist create`.
+
+**Cost still ticks.** Subagent invocations happen for real and their tokens still count against the ledger. The budget check itself is downgraded to a warning per the startup rules above; the ledger update is not.
+
+**Exit code.** On a clean dry-run finish, exit successfully. Emit a summary line `dry-run complete: <n> gated calls suppressed, <m> envelope writes, audit trail in workspace/.logs/dry-run-<ts>.log`.
+
+The purpose of this mode is to prove the full pipeline end-to-end — pick, envelope, worker dispatch, reviewer verdict, audit composition, redaction — without touching upstream. Never claim a dry-run success means production would succeed: it only means nothing was broken in a way that stopped the pipeline.
 
 ## Absolute don'ts
 

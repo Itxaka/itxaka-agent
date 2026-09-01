@@ -94,16 +94,28 @@ At the end of every invocation THAT INSERTED A SLOT ROW, close the slot with one
 
 ```
 UPDATE slots SET
-  ended_at = <ISO now>,
-  wall_ms = <elapsed>,
-  ticket_ref = <the ticket you worked>,
-  outcome = <'done'|'awaiting-author'|'escalated'|'in-flight'|'error'>,
-  gated_calls = <count>,
+  ended_at      = <ISO now>,
+  wall_ms       = <elapsed>,
+  ticket_ref    = <the ticket you worked>,
+  outcome       = <'finished'|'error'>,
+  progress_note = <one-line summary of what this slot advanced>,
+  gated_calls   = <count>,
   envelope_writes = <count>
 WHERE slot_id = <this slot>;
 ```
 
-`'idle'` is no longer a valid outcome — an idle exit never inserts a row in the first place, so there is nothing to update. If a slot inserted a row but then blew up before doing meaningful work (network failure fetching state, subagent failed to start), close it with `outcome='error'` and a `note` describing what broke; do not leave `ended_at` null.
+Slot outcome is only ever `finished` or `error`. The slot is done as soon as your invocation returns — a slot never "waits", it just wraps up. Any future work on the same ticket happens in a new slot. Ticket-level state (done / awaiting-author / escalated) lives on the ticket and in the envelope, not on the slot row.
+
+`progress_note` is the human-readable "what happened this slot" line the dashboard shows. Keep it short and specific — no jargon, no cost data. Examples:
+
+- `"coder round 0: 23 commits, envelope handed to tester"`
+- `"tester round 0: not applicable (vendor bumps), envelope handed to docs"`
+- `"reviewer round 0: approve, PR kairos-io/kairos#4442 opened"`
+- `"reviewer round 0: changes-requested, 5 comments posted on kairos-io/kairos#4282"`
+- `"escalated: 3 reviewer rounds without convergence"`
+- `"cached reviewer verdict reused, review posted on kairos-io/kairos#4282"`
+
+If a slot inserted a row and then blew up before doing meaningful work (network failure fetching state, subagent failed to start), close it with `outcome='error'` and a `progress_note` naming what broke; do not leave `ended_at` null.
 
 DB write shape: use the `sqlite3 workspace/.state/audit.sqlite` binary with `-cmd ".parameter set …"` and parameterized SQL when the value could contain quotes or newlines, or the `.import` command with a tab-separated stdin. Never build SQL by string concatenation for values that could contain unbalanced quotes.
 

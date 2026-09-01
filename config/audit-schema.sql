@@ -21,10 +21,14 @@ CREATE TABLE IF NOT EXISTS slots (
   dry_run         INTEGER NOT NULL DEFAULT 0,
   ticket_ref      TEXT,                      -- owner/repo#n, null when idle
   entry_reason    TEXT,                      -- 'scheduled' | 'manual' | 'smoke-test'
-  outcome         TEXT,                      -- 'done' | 'awaiting-author' | 'escalated' | 'in-flight' | 'error' (idle exits are NOT recorded)
+  outcome         TEXT,                      -- 'finished' | 'error' (idle exits are NOT recorded; ticket-level state lives on the ticket, not the slot)
+  progress_note   TEXT,                      -- one-line summary of what this slot advanced, e.g. "coder round 0: 23 commits, envelope at testing"
   gated_calls     INTEGER NOT NULL DEFAULT 0,
   envelope_writes INTEGER NOT NULL DEFAULT 0
 );
+
+-- One-shot migration for DBs created before `progress_note` existed.
+ALTER TABLE slots ADD COLUMN progress_note TEXT;
 
 -- Migration for databases created before `seq` existed. SQLite has no
 -- `ADD COLUMN IF NOT EXISTS`, so this errors cosmetically once the column

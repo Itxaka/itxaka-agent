@@ -43,8 +43,8 @@ CASE
   WHEN COALESCE($col,'')='' THEN '%MUTED:—%'
   WHEN $col='dry-run' THEN '%PILL:blue:dry-run%'
   WHEN $col IN ('live','idle') THEN '%PILL:neutral:'||$col||'%'
-  WHEN $col IN ('done','approve') THEN '%PILL:ok:'||$col||'%'
-  WHEN $col IN ('awaiting-author','changes-requested','in-flight','coding','testing','docs','reviewing') THEN '%PILL:warn:'||$col||'%'
+  WHEN $col IN ('done','approve','finished') THEN '%PILL:ok:'||$col||'%'
+  WHEN $col IN ('awaiting-author','changes-requested','coding','testing','docs','reviewing') THEN '%PILL:warn:'||$col||'%'
   WHEN $col IN ('escalated','error') THEN '%PILL:bad:'||$col||'%'
   ELSE '%PILL:neutral:'||$col||'%'
 END
@@ -248,11 +248,8 @@ section "Recent slots" "
 SELECT
   $(slot_name "seq" "slot_id")                                                AS slot,
   $(dash_text "ticket_ref")                                                   AS ticket,
-  CASE WHEN dry_run=1 THEN '%PILL:blue:dry-run%' ELSE '%PILL:neutral:live%' END AS mode,
-  $(pill_case "outcome")                                                       AS outcome,
-  $(dash_text "entry_reason")                                                  AS reason,
-  $(dash_num  "gated_calls")                                                   AS gated,
-  $(dash_num  "envelope_writes")                                               AS envwr,
+  $(pill_case "outcome")                                                      AS outcome,
+  $(dash_text "progress_note")                                                AS what_happened,
   CASE WHEN wall_ms IS NULL THEN '%MUTED:—%' ELSE printf('%.1fs', wall_ms/1000.0) END AS wall
 FROM slots
 ORDER BY started_at DESC

@@ -237,10 +237,6 @@ Two thresholds:
 
 The manager records cost per role per phase into `envelope.cost.by_role` and updates a persistent rolling-window ledger at `workspace/.state/budget.json`. The ledger survives restarts.
 
-## 22a. Every PR opens with the maintainers team as reviewer
-
-When the manager opens a pull request on any `kairos-io/*` repo, it MUST request review from the `kairos-io/maintainers` team on the PR — otherwise the change sits invisible on the reviewers' dashboard. Use `gh pr create --reviewer kairos-io/maintainers …` on creation, or `gh pr edit <n> --add-reviewer kairos-io/maintainers` if the PR is already open. This is not a maintainer courtesy, it is how the fleet makes its work visible to the humans who can merge it.
-
 ## 22. Roles run as subprocesses; model is per role
 
 Every role runs in its own subprocess. Consequences:

@@ -1,0 +1,62 @@
+# kairos-triage-agent runtime configuration.
+#
+# This file describes WHERE the agent looks and HOW OFTEN.
+# Takeover decision logic lives in rules.yaml.
+
+agent:
+  # GitHub login used by the agent when assigning itself, opening PRs, and
+  # commenting. Must match the token's owner.
+  github_user: itxaka-agent
+
+  # Fork namespace. All pull requests are opened from
+  # <fork_owner>/<repo>:<branch> against the upstream repo.
+  fork_owner: itxaka-agent
+
+  # Local scratch directory (relative to the project root) where the agent
+  # clones repositories. Gitignored.
+  workspace: workspace
+
+  # Poll cadence. Every interval the agent walks the repository list below.
+  poll_interval: 30m
+
+  # Hard cap on how many tickets the agent will take on in a single cycle.
+  # Prevents a flood of new issues from overwhelming its investigation queue.
+  max_new_tickets_per_cycle: 2
+
+# Repositories the agent watches. Order is significant: earlier entries are
+# scanned first each cycle, so put the highest-signal repos on top.
+repositories:
+  - owner: kairos-io
+    name: kairos
+    default_branch: master
+    watch:
+      issues: true
+      pull_requests: true
+
+# GitHub authentication.
+#
+# The agent expects a Personal Access Token (fine-grained, scoped to the
+# fork namespace and to `issues: write` / `pull_requests: write` on the
+# upstream repos it needs to comment on) exposed via the environment
+# variable named here. The file itself never contains the token.
+github:
+  token_env: KAIROS_TRIAGE_GITHUB_TOKEN
+
+# Reproduction toolchain. When rules.yaml marks an issue as
+# `reproduce_in_qemu: true`, these settings drive the VM.
+qemu:
+  # Path to the ISO builder helper the agent should use. `auroraboot` is the
+  # canonical Kairos ISO builder.
+  iso_builder: auroraboot
+  # Where built ISOs and disk images are cached between cycles.
+  artifact_cache: workspace/.artifacts
+  # Default resources for the reproduction VM.
+  vm:
+    memory_mb: 4096
+    cpus: 2
+    kvm: true
+
+logging:
+  level: info
+  # Per-cycle log file; rotated by cycle timestamp.
+  dir: workspace/.logs

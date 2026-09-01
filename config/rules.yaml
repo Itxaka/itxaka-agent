@@ -1,0 +1,79 @@
+# Takeover rules.
+#
+# For every open issue and pull request in the watched repositories, the
+# agent evaluates this ruleset top-to-bottom. The first rule whose match
+# block is satisfied decides the action. If no rule matches, the ticket is
+# skipped.
+#
+# Match keys (all optional, AND-ed within a single rule):
+#   labels_any:       ticket has at least one of these labels
+#   labels_all:       ticket has every one of these labels
+#   labels_none:      ticket has none of these labels
+#   title_regex:      case-insensitive regex matched against the title
+#   body_regex:       case-insensitive regex matched against the body
+#   author_is_member: true → author is a kairos-io org member
+#   is_pull_request:  true|false
+#   assignee_state:   unassigned | assigned_to_agent | assigned_to_other
+#
+# Actions:
+#   skip                     do nothing this cycle
+#   investigate              take over, comment, investigate; open PR only if fix is trivial and verified
+#   comment_only             post a specific comment, do not self-assign
+#   escalate_to_human        add a label so a maintainer sees it, do not act
+
+# Hard skip: anyone else is on it. Rule 5.
+- name: skip-assigned-to-human
+  match:
+    assignee_state: assigned_to_other
+  action: skip
+
+# Hard skip: agent is already on it. Progress updates are handled by the
+# per-ticket state machine, not by the takeover rules.
+- name: skip-already-mine
+  match:
+    assignee_state: assigned_to_agent
+  action: skip
+
+# Hard skip: anything explicitly flagged as human-only.
+- name: skip-do-not-triage
+  match:
+    labels_any: [do-not-triage, needs-design, discussion, RFC]
+  action: skip
+
+# Reproducible bug reports with a clear failure surface: take over.
+- name: investigate-boot-bugs
+  match:
+    is_pull_request: false
+    assignee_state: unassigned
+    labels_any: [bug, boot, install, upgrade, reset]
+    labels_none: [needs-info, blocked]
+  action: investigate
+  investigate:
+    reproduce_in_qemu: true
+
+# Bugs with no repro information yet: ask for more, do not take over.
+- name: request-repro-info
+  match:
+    is_pull_request: false
+    assignee_state: unassigned
+    labels_any: [bug]
+    labels_none: [needs-info]
+    body_regex: "^(?!.*(steps to reproduce|reproduction|repro)).{0,200}$"
+  action: comment_only
+  comment: |
+    Thanks for the report. To investigate this I need a minimal reproduction:
+    the Kairos version, the exact command or boot flow that fails, and any
+    logs from `journalctl -u kairos-agent` or the immucore emergency shell.
+  labels_add: [needs-info]
+
+# Feature requests: not our scope.
+- name: skip-features
+  match:
+    labels_any: [enhancement, feature-request]
+  action: skip
+
+# Documentation issues: leave to humans for now.
+- name: skip-docs
+  match:
+    labels_any: [documentation]
+  action: skip

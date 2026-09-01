@@ -1,0 +1,19 @@
+# Cloned repositories and reproduction artifacts.
+workspace/*
+!workspace/.gitkeep
+
+# Local overrides — real config with tokens, per-machine tweaks.
+config/config.local.yaml
+config/rules.local.yaml
+
+# Editor / OS scratch.
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Build output (language undecided; keep the common ones out preemptively).
+/bin/
+/dist/
+*.exe
+*.test

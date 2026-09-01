@@ -80,6 +80,19 @@ For the ticket you picked:
 4. Create the envelope at `workspace/.state/<owner>_<repo>/<n>/envelope.json` with the schema from `docs/agent-roles.md`. Set `phase: coding` for issues, `phase: reviewing` for PRs.
 5. Ensure the fork clone exists at `workspace/<repo>/`. If not, `gh repo fork` (if the fork does not exist upstream on the agent account) and `git clone https://github.com/<fork_owner>/<repo>.git workspace/<repo>`. Add upstream: `git remote add upstream https://github.com/<owner>/<repo>.git`.
 6. Fetch upstream, fast-forward the default branch on the fork, push the updated default to the fork (rule 7). Create the working branch: `triage/<n>-<slug>` for issues, `review-repro/<n>` for PRs.
+7. For PRs, check the author login. If it is not `agent.github_user`, set `envelope.pre_review.third_party = true`. This gates the coder/tester/docs branches of the state machine — see "Third-party PRs" below.
+
+### Pre-review collection (PRs only, before dispatching the reviewer)
+
+The reviewer's tool set is `Read, Grep, Glob` — no `Bash`, no `Write`. Any command output it needs has to be on disk before it runs. Right before dispatching the reviewer, populate `envelope.pre_review`:
+
+- `diff_stat`: `git -C workspace/<repo> diff --stat upstream/<base>...<branch>`.
+- `commit_log`: `git -C workspace/<repo> log --oneline upstream/<base>..<branch>`.
+- `diff_path`: full diff written to `workspace/.state/<owner>_<repo>/<n>/diff.patch` via `git -C workspace/<repo> diff upstream/<base>...<branch> > <path>`.
+- `linked_issue_bodies`: a `{ "owner/repo#n": "<body>" }` map for every issue / PR referenced from the ticket description. Use `gh issue view` / `gh pr view` (reads only).
+- `third_party`: already set above.
+
+Re-run this collection at the start of every reviewer round — later rounds see rebased branches and new comments.
 
 ### Advance the state machine
 
@@ -100,17 +113,29 @@ Agents to spawn per phase:
 | `docs`      | `kairos-triage-docs`                   |
 | `reviewing` | `kairos-triage-reviewer`               |
 
-Each subagent updates the envelope on disk and returns a short summary in its final text. You:
+The coder, tester, and docs subagents update the envelope on disk and return a short summary. The reviewer does NOT write to the envelope — it returns a fenced JSON verdict block in its final text (see `.claude/agents/kairos-triage-reviewer.md`), and you append that block to `envelope.history` yourself. The reviewer's tool set is intentionally read-only.
 
-1. Re-read the envelope after the subagent returns.
-2. Extract `subagent_tokens` from the Agent tool's result and add to `envelope.cost.by_role.<role>` and to the rolling ledger. Convert tokens to USD using the model's public pricing (documented in `claude-api` skill; approximate is fine — this is a budget, not billing).
+For every subagent call you:
+
+1. Re-read the envelope after the subagent returns (for reviewer, envelope is unchanged; parse the verdict block from the returned text and append to `history`).
+2. Extract `subagent_tokens` from the Agent tool's result and add to `envelope.cost.tokens.<role>` and to the rolling ledger. Pricing is TBD in this build — record raw tokens and leave `envelope.cost.by_role.<role>` at `0.00` with a `pricing_warning` note. Budget hard-cap logic still runs against `usd_total`, which stays `0.00` until pricing lands.
 3. Advance `phase` to the next state.
 
 On `reviewing`:
 
 - If the reviewer's verdict is `approve`, advance to `manager-final`.
-- If `changes-requested`, increment `round`, set `phase: coding`, and dispatch the coder again with the reviewer comments attached.
+- If `changes-requested` and `envelope.pre_review.third_party` is `false`, increment `round`, set `phase: coding`, and dispatch the coder again with the reviewer comments attached.
+- If `changes-requested` and `third_party` is `true`, do NOT loop — see "Third-party PRs" below.
 - If `round + 1 > roles.max_review_rounds`, set `phase: escalated` and go to escalation.
+
+### Third-party PRs
+
+A PR whose author is not `agent.github_user` is third-party (Renovate, human contributors). The fleet has no license to rewrite someone else's branch, so the coder/tester/docs pipeline is skipped:
+
+- On `approve`: post an approving review (`gh pr review --approve --body <disclosure + one-line summary>`), publish the audit trail, remove the `in-progress` label, set `phase: done`, and drop the ticket for the cycle.
+- On `changes-requested`: post `gh pr review --request-changes --body <...>` plus one `gh pr comment` per specific comment (inline suggestions where a line anchor is present), publish the audit trail, leave the `in-progress` label and self-assignment in place, and set `phase: awaiting-author`. The envelope is NOT `done` — the next slot re-polls this ticket, and if the author has pushed new commits since the recorded `head_sha`, regenerate `pre_review` and dispatch the reviewer again with `round++`. If `max_review_rounds` is reached without a new push, escalate per rule 18.
+
+`awaiting-author` is a terminal-for-this-slot state; it does not consume the ticket, only the slot. On the next slot boundary the manager re-picks the same envelope if the fleet is still assigned.
 
 ### Finalize (manager-final)
 
@@ -134,13 +159,7 @@ Do the same publication as finalize, but:
 
 ### Cost accounting
 
-At the end of every subagent call, add `subagent_tokens * <role model $/token>` to:
-
-- `envelope.cost.by_role.<role>` (running total for the ticket)
-- `envelope.cost.usd_total`
-- `workspace/.state/budget.json` — an append-only log of `{ts, ticket, role, usd}` entries. The trailing-24h sum is what rule 21 checks.
-
-Model prices come from the `claude-api` skill's reference. If a price is unavailable, log a warning and continue with `0.00` — the budget is a safety rail, not billing.
+At the end of every subagent call, append `{ts, ticket, role, tokens, usd}` to `workspace/.state/budget.json`. Pricing is not wired yet — record raw tokens and leave `usd = 0.00` with a `pricing_warning` note. The rule 21 hard-cap check still runs against `usd_total`, which stays `0.00` until pricing lands; the ledger keeps token history so a human can backfill USD later.
 
 ## Dry-run mode
 

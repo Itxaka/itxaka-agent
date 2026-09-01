@@ -40,9 +40,11 @@ Updates user-facing documentation when a change alters behavior humans read abou
 
 Reads the combined artifact set produced by coder + tester + docs and issues one verdict per round: **approve** or **changes-requested** with an itemized list of comments. Same checks a human maintainer would apply — correctness, missing tests, style, scope creep, matching the target repo's conventions.
 
-- **Inputs:** full artifact bundle from the round.
-- **Outputs:** verdict plus specific comments (file, line, suggestion).
-- **Never:** edits files, calls the GitHub API. The reviewer says what is wrong; the coder/tester/docs fix it.
+The reviewer's tool set is read-only on purpose (rule 22 independence, rule 17 write funnel). The manager pre-collects everything the reviewer needs — diff, commit log, linked-issue text — into `envelope.pre_review` before dispatching. The reviewer returns its verdict as a fenced JSON block in its final message; the manager appends that block to `envelope.history`.
+
+- **Inputs:** `envelope.pre_review` (diff stat, commit log, diff file on disk, linked-issue bodies) plus the coder/tester/docs summaries when present.
+- **Outputs:** short paragraph plus a JSON verdict block; no on-disk writes.
+- **Never:** edits files, mutates the envelope, calls the GitHub API. The reviewer says what is wrong; the coder/tester/docs fix it; the manager records it.
 
 ## Handoff envelope
 
@@ -61,11 +63,20 @@ Every handoff carries this JSON envelope, persisted to `workspace/.state/<repo>/
     "logs":        ["workspace/.artifacts/logs/run-2026-09-01T09-00.log"],
     "screendumps": ["workspace/.artifacts/screens/boot-fail.ppm"]
   },
+  "pre_review": {
+    "diff_stat":            "12 files changed, 84 insertions(+), 3 deletions(-) ...",
+    "commit_log":           "abcd123 fix: ...\n...",
+    "diff_path":            "workspace/.state/kairos-io_kairos/1234/diff.patch",
+    "linked_issue_bodies":  { "kairos-io/kairos#4200": "..." },
+    "third_party":          false
+  },
   "history": [
     { "round": 0, "verdict": "changes-requested", "comments": [ ... ] }
   ]
 }
 ```
+
+`pre_review` is populated by the manager right before it dispatches the reviewer. Setting `third_party: true` tells the manager not to invoke the coder/tester/docs loop on a `changes-requested` verdict — see "Third-party PR handling" below.
 
 ## State machine
 
@@ -84,6 +95,15 @@ Every handoff carries this JSON envelope, persisted to `workspace/.state/<repo>/
 ```
 
 `intake` is where the manager picks up the ticket. `manager-final` is where the manager pushes the branch to the fork, opens the PR, publishes the audit trail (rule 20 — human-readable summary comment plus the redacted envelope, either inline or as a gist), links the PR from the issue, and clears `in-progress`. `escalated` is the safety valve required by rule 18; it also publishes the audit trail so the human picking up the ticket sees everything the roles produced.
+
+## Third-party PR handling
+
+Reviewer verdicts on PRs the fleet did NOT author (Renovate, human contributors) never trigger the coder/tester/docs loop — the fleet has no license to rewrite someone else's branch. The manager instead:
+
+- On `approve`: posts an approving review, removes the `in-progress` label, drops the ticket for the cycle. The PR author or a maintainer merges it.
+- On `changes-requested`: posts the review with the itemized comments as inline suggestions, leaves the ticket assigned (rule 12 label stays), publishes the audit trail, and drops the ticket. At the next slot boundary the manager re-polls: if the author has pushed new commits, the pre-review data is regenerated and the reviewer runs again with `round++`. If `round + 1 > roles.max_review_rounds` without a push, the ticket escalates per rule 18.
+
+The manager decides third-party status when opening the envelope: if the PR's author login is not `agent.github_user`, `pre_review.third_party` is set to `true` and the coder/tester/docs branches of the state machine are skipped.
 
 ## Configuration knobs
 

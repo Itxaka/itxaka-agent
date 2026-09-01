@@ -30,6 +30,53 @@ The project root is the current working directory. If it is not, stop — do not
 
 You are invoked once per 30-minute slot. Do exactly one slot's worth of work and exit. Do not loop internally to consume multiple slots; the scheduler will call you again.
 
+### Audit database
+
+Every manager invocation writes a structured record of what it did to a local SQLite ledger at `workspace/.state/audit.sqlite`. This is what a dashboard reads. Writes happen in **both** live and dry-run modes — the DB is local, no external side effect, so gating it would just lose the smoke-test history.
+
+At startup, initialize the schema (idempotent):
+
+```
+mkdir -p workspace/.state
+sqlite3 workspace/.state/audit.sqlite < config/audit-schema.sql
+```
+
+Generate a `slot_id` for this invocation — ISO UTC timestamp plus a short random suffix, e.g. `20260901T141543Z-a7f3`. Open the slot with a single INSERT into `slots(slot_id, started_at, dry_run, entry_reason)`. Set `entry_reason` to `'scheduled'` when the invocation prompt does not say otherwise, `'manual'` when a human ran `/kairos-triage-run`, `'smoke-test'` when the prompt explicitly names it.
+
+From that point on, every state-machine milestone appends a row:
+
+- `events(ts, slot_id, ticket_ref, phase_before, phase_after, role, action, wall_ms, tokens, note)` on:
+  - `intake` when you first pick a ticket (role=`manager`, action=`intake`).
+  - `pre_review_collect` right after writing `envelope.pre_review` (role=`manager`).
+  - `dispatch` right before every `Agent` call (role=the-target-role, action=`dispatch`, tokens=null).
+  - `return` right after every `Agent` returns (role=same, action=`return`, tokens=subagent_tokens, wall_ms=elapsed).
+  - `verdict` right after you parse a reviewer's JSON block (role=`reviewer`, action=`verdict`, note=verdict string).
+  - `phase_change` on any envelope phase change (role=`manager`).
+  - `audit_publish` at manager-final or escalation (role=`manager`).
+  - `error` on any recoverable failure (role=whatever was running, action=`error`, note=one line).
+- `tickets` — one `INSERT OR IGNORE` at intake (populating owner/repo/number/kind/author/third_party/first_seen_at), then an `UPDATE` on `last_seen_at` and `terminal_phase` at slot end.
+- `verdicts` — one row per reviewer verdict, in addition to the `events.verdict` row above.
+- `artifacts` — one row per commit produced by coder/tester, per test/doc/log/screendump path added to `envelope.artifacts`, and per posted PR review or issue comment (kind `'pr_review'` / `'issue_comment'`; in dry-run, insert them anyway with `note='dry-run'` so the dashboard shows what would have been posted).
+- `costs` — one row per subagent return, aligned with the `events.return` row. `tokens` from the Agent result, `usd = 0.0` until pricing is wired.
+- `gated_calls` — every command you print under `[dry-run]` also inserts here. Skip in live mode.
+
+At the end of every invocation, close the slot with one UPDATE:
+
+```
+UPDATE slots SET
+  ended_at = <ISO now>,
+  wall_ms = <elapsed>,
+  ticket_ref = <the ticket you worked, or null>,
+  outcome = <'done'|'awaiting-author'|'escalated'|'in-flight'|'idle'|'error'>,
+  gated_calls = <count>,
+  envelope_writes = <count>
+WHERE slot_id = <this slot>;
+```
+
+DB write shape: use the `sqlite3 workspace/.state/audit.sqlite` binary with `-cmd ".parameter set …"` and parameterized SQL when the value could contain quotes or newlines, or the `.import` command with a tab-separated stdin. Never build SQL by string concatenation for values that could contain unbalanced quotes.
+
+If a DB write fails, log a warning line but do NOT abort the slot. The envelope on disk is the source of truth for phase progression; the audit DB is a dashboard feed.
+
 ### Startup checks (in order, fail-fast)
 
 1. Read `KAIROS_TRIAGE_DRY_RUN` from the environment. If it is set to `1`, `true`, or `yes` (case-insensitive), enter **dry-run mode** for the rest of this invocation. Log a banner line `dry-run: no GitHub writes, no git push`. See the "Dry-run mode" section below for exactly what changes.

@@ -24,14 +24,28 @@ The non-negotiable behaviors are documented in [`RULES.md`](./RULES.md). Read th
 
 ## Layout
 
-| Path              | Purpose                                                        |
-|-------------------|----------------------------------------------------------------|
-| `config/`         | Runtime configuration (repos to watch, cadence, takeover rules)|
-| `docs/`           | Design notes and operational documentation                     |
-| `workspace/`      | Scratch directory where the agent clones repos (gitignored)    |
-| `RULES.md`        | The ground rules the agent must obey                           |
-| `docs/agent-roles.md` | Multi-role fleet layout (manager, coder, tester, docs, reviewer) |
+| Path                              | Purpose                                                        |
+|-----------------------------------|----------------------------------------------------------------|
+| `RULES.md`                        | The ground rules the agent must obey                           |
+| `config/`                         | Runtime configuration (repos to watch, cadence, takeover rules) and the audit schema |
+| `.claude/agents/`                 | Manager + coder / tester / docs / reviewer subagent prompts    |
+| `.claude/skills/kairos-triage-run/` | Entry-point skill that spawns the manager for one slot       |
+| `docs/`                           | Design notes and operational documentation                     |
+| `docs/agent-roles.md`             | Multi-role fleet layout (manager, coder, tester, docs, reviewer) |
+| `dashboard/`                      | `generate.sh` static-HTML dashboard for the audit ledger      |
+| `workspace/`                      | Scratch directory where the agent clones repos, keeps envelopes, and writes the audit SQLite DB (gitignored) |
+
+## Running
+
+The agent is Claude Code-native — no separate binary. Two entry points:
+
+- Manually: `/kairos-triage-run` from inside a Claude Code session opened in this directory.
+- Scheduled: `/schedule create every 30 minutes 8:00-17:00 mon-fri run /kairos-triage-run` (matches the working window in `config/config.yaml`).
+
+Dry-run smoke tests: `KAIROS_TRIAGE_DRY_RUN=1 KAIROS_TRIAGE_PICK=<owner>/<repo>#<n> /kairos-triage-run`. Every gh write and `git push` is printed to stdout and to `workspace/.logs/dry-run-<ts>.log` instead of executed.
+
+Regenerate the dashboard from the local ledger: `./dashboard/generate.sh` — opens as `dashboard/index.html` in any browser.
 
 ## Status
 
-Bootstrapping. No agent code yet — this commit sets up directory layout, rules, and configuration skeletons only.
+Operational. Full pipeline verified end to end in dry-run against real kairos-io PRs (Renovate action-pin bumps and a human-authored CI change). Live-mode `/schedule` wiring is the next step.

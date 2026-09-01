@@ -61,8 +61,10 @@ Per-ticket state (phase, round, artifact paths, reviewer history, pre-review con
 
 An additional SQLite ledger at `workspace/.state/audit.sqlite` mirrors every slot, event, verdict, artifact, cost tick, and gated call — see `config/audit-schema.sql`. This is a dashboard feed, not a coordination channel; only the manager writes to it, workers do not (rule 17). Both live and dry-run runs write, since the DB is local-only.
 
-## Open questions
+## Resolved decisions
 
-- Language and runtime — Go is the natural choice given the ecosystem, but this is not yet decided.
-- How to gate destructive actions (PR opens, label edits) behind a dry-run mode during early development.
-- Whether to run the investigator loop in-process or as a subprocess per ticket for isolation.
+The earlier draft's open questions are all answered by the current implementation:
+
+- **Runtime.** Claude Code-native. No standalone binary — the manager is a subagent (`.claude/agents/kairos-triage-manager.md`), workers are subagents dispatched via the `Agent` tool, and the scheduler is a `/schedule` routine that invokes the `/kairos-triage-run` skill once per slot. See `docs/claude-code-integration.md`.
+- **Dry-run gating.** `KAIROS_TRIAGE_DRY_RUN=1` at startup gates every mutating `gh` call and every `git push`; reads and envelope writes still happen so the pipeline exercises end to end. `KAIROS_TRIAGE_PICK=<owner>/<repo>#<n>` pins a target for smoke tests. See the "Dry-run mode" section of the manager agent file.
+- **Isolation.** Every role runs in its own subprocess (fresh subagent = fresh LLM context). Rule 22. Concurrency is 1 while the fleet stabilises.

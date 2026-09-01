@@ -154,7 +154,9 @@ repositories:
       issues: true
       pull_requests: true
   - owner: kairos-io
-    name: auroraboot
+    # Upstream repo name is mixed-case. Every `gh` call must use this exact
+    # spelling; case matters on GitHub API paths.
+    name: AuroraBoot
     default_branch: main
     watch:
       # Issue triage stays scoped to the kairos repo per user direction.
@@ -163,12 +165,14 @@ repositories:
 
 # GitHub authentication.
 #
-# The agent expects a Personal Access Token (fine-grained, scoped to the
-# fork namespace and to `issues: write` / `pull_requests: write` on the
-# upstream repos it needs to comment on) exposed via the environment
-# variable named here. The file itself never contains the token.
+# The agent reuses whatever the `gh` CLI is already authenticated with on
+# the host. Rule: `gh auth status` MUST show `itxaka-agent` as the active
+# account before this agent runs; a global `git` identity may still be the
+# operator's personal one — commits explicitly override that per rule.
+#
+# No token env var, no PAT file, no secret material in this repo.
 github:
-  token_env: KAIROS_TRIAGE_GITHUB_TOKEN
+  expected_account: itxaka-agent
 
 # Reproduction toolchain. When rules.yaml marks an issue as
 # `reproduce_in_qemu: true`, these settings drive the VM.

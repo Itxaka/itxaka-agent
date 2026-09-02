@@ -261,7 +261,15 @@ When the manager reaches `manager-final` and opens the PR — or when it escalat
 Two artifacts leave the workspace at this step:
 
 1. **Human-readable summary** — a comment on the issue, chronologically ordered by phase and round. Every entry names the role, the time, the artifact it produced (files, commits, tests, logs), and, for review rounds, the reviewer's verdict and comments. This is prose a maintainer can skim without decoding JSON.
-2. **Machine-readable envelope** — the full `envelope.json`, embedded inside a collapsed `<details><summary>envelope.json</summary>` block at the bottom of the summary comment as a fenced ` ```json ` code block. Do NOT upload it as a gist and do NOT push it as a file to the repo. The `<details>` fold keeps the thread readable while a single click reveals the machine-readable envelope right next to the human summary.
+2. **Machine-readable envelope** — the full `envelope.json`, pushed as a file onto the fork's dedicated `audit-trail` orphan branch at path `.audit/<owner>_<repo>/<ticket>/envelope-<slot_id>.json` and linked from the summary comment as a raw-content download URL:
+
+   ```
+   https://raw.githubusercontent.com/<agent.fork_owner>/<repo>/audit-trail/.audit/<owner>_<repo>/<ticket>/envelope-<slot_id>.json
+   ```
+
+   Clicking the link downloads the envelope in the reader's browser — the same UX as a comment attachment, using only the `git push` capability the fleet already has. Do NOT inline the envelope in the comment body, do NOT create a gist, and do NOT push to any branch other than `audit-trail`. The `audit-trail` branch is orphan (no history relation to the code branches) so it never conflicts with feature work, and each envelope is a distinct file so no rewrites are ever needed.
+
+   First-time bootstrap of the `audit-trail` branch: `git checkout --orphan audit-trail && git reset --hard && git commit --allow-empty -m "audit: initial"` then `git push origin audit-trail`. The manager should probe with `git ls-remote --exit-code origin audit-trail` and run the bootstrap only when the ref is missing.
 
 **No cost information leaves the workspace.** The summary comment, the PR body, release-note drafts, and any other human-visible artifact the manager produces MUST NOT contain token counts, USD amounts, per-role cost breakdowns, or budget-ledger references. Cost lives in the local audit DB and the envelope's `cost` block only — external readers on kairos-io do not need to see what a fleet run cost.
 

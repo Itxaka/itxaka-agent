@@ -127,9 +127,12 @@ audit:
   # PR-body variant is a config change, not a code change.
   target: issue_comment
 
-  # Envelope always embedded inline in the summary comment inside a
-  # collapsed <details> block. Never uploaded as a gist. See RULES.md rule 20.
-  envelope_target: inline
+  # Envelope pushed to the fork's `audit-trail` orphan branch and linked
+  # from the summary comment as a raw-content URL. Never inlined, never a
+  # gist. See RULES.md rule 20.
+  envelope_target: fork-audit-branch
+  envelope_branch: audit-trail
+  envelope_path_template: ".audit/{owner}_{repo}/{ticket}/envelope-{slot_id}.json"
 
   # Redaction applied to both the summary and the raw envelope before
   # anything leaves the workspace. Rule 20. `strip_cost` removes the

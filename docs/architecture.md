@@ -42,7 +42,7 @@ Two workers, not one: the reviewer consumes PRs, the investigator consumes issue
 
 ## Components
 
-The single "investigator" and "reviewer" boxes below are actually **fleets of roles** coordinated by a manager — see [`agent-roles.md`](./agent-roles.md) and RULES.md rules 17-19. From the scheduler's point of view they are still one worker each; internally they are a coder/tester/docs/reviewer pipeline funneling through the manager.
+The single "investigator" and "reviewer" boxes below are actually **a swarm of roles** coordinated by a manager — see [`agent-roles.md`](./agent-roles.md) and RULES.md rules 17-19. From the scheduler's point of view they are still one worker each; internally they are a coder/tester/docs/reviewer pipeline funneling through the manager.
 
 - **scheduler** — owns the slot clock. Wakes at every slot boundary, checks the working window, and either advances current work or picks up next work. Rule 11.
 - **manager** — sole GitHub-write authority; dispatches worker roles for the current ticket, drives the per-ticket state machine, escalates on unresolved review disagreements.
@@ -67,4 +67,4 @@ The earlier draft's open questions are all answered by the current implementatio
 
 - **Runtime.** Claude Code-native. No standalone binary — the manager is a subagent (`.claude/agents/kairos-triage-manager.md`), workers are subagents dispatched via the `Agent` tool, and the scheduler is a `/schedule` routine that invokes the `/kairos-triage-run` skill once per slot. See `docs/claude-code-integration.md`.
 - **Dry-run gating.** `KAIROS_TRIAGE_DRY_RUN=1` at startup gates every mutating `gh` call and every `git push`; reads and envelope writes still happen so the pipeline exercises end to end. `KAIROS_TRIAGE_PICK=<owner>/<repo>#<n>` pins a target for smoke tests. See the "Dry-run mode" section of the manager agent file.
-- **Isolation.** Every role runs in its own subprocess (fresh subagent = fresh LLM context). Rule 22. Concurrency is 1 while the fleet stabilises.
+- **Isolation.** Every role runs in its own subprocess (fresh subagent = fresh LLM context). Rule 22. Concurrency is 1 while the swarm stabilises.

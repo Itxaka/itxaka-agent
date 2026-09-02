@@ -37,7 +37,7 @@ ALTER TABLE slots ADD COLUMN progress_note TEXT;
 -- `scripts/backfill-slot-seq.py` after the first init on an old DB.
 ALTER TABLE slots ADD COLUMN seq INTEGER;
 
--- Dimension: one row per ticket the fleet has ever touched.
+-- Dimension: one row per ticket the swarm has ever touched.
 CREATE TABLE IF NOT EXISTS tickets (
   ticket_ref     TEXT PRIMARY KEY,           -- owner/repo#n
   owner          TEXT NOT NULL,

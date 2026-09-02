@@ -1,6 +1,6 @@
 # Ground rules
 
-These rules govern every action the triage agent takes. They exist to keep the agent from damaging the Kairos ecosystem, stepping on human contributors, or shipping unverified fixes. Violating any of them is a bug in the agent, not a judgment call.
+These rules govern every action **the Swarm** (Itxaka's agents) takes. They exist to keep the agent from damaging the Kairos ecosystem, stepping on human contributors, or shipping unverified fixes. Violating any of them is a bug in the agent, not a judgment call.
 
 ## 1. Never push to upstream repositories
 
@@ -43,13 +43,13 @@ Silence is not allowed. Humans must be able to read the issue and know what the 
 
 ## 4a. Progress updates propagate to linked issues
 
-When a slot advances work on a fleet PR that resolves one or more issues (declared via `Fixes` / `Closes` in the PR body, or listed in the ticket the PR was opened from), post the per-slot progress note on **each** linked issue too, not only on the PR. A short one-liner is enough — what changed this slot, the new commit SHA, and a link back to the PR — but the issue must not stay silent while the PR sees several passes.
+When a slot advances work on a swarm PR that resolves one or more issues (declared via `Fixes` / `Closes` in the PR body, or listed in the ticket the PR was opened from), post the per-slot progress note on **each** linked issue too, not only on the PR. A short one-liner is enough — what changed this slot, the new commit SHA, and a link back to the PR — but the issue must not stay silent while the PR sees several passes.
 
 Rationale: an issue whose comment thread stops on "opened PR #NNNN" while the PR churns through CI fixes reads as abandoned. A reader on the issue should always know the last time the agent touched the work.
 
-## 4b. Fleet PRs that resolve issues must carry a `Fixes` trailer
+## 4b. Swarm PRs that resolve issues must carry a `Fixes` trailer
 
-Every PR the fleet opens which closes one or more issues includes a `Fixes: #<n>` (or `Fixes #<n>` — GitHub accepts both) line in its body, one per resolved issue, cross-repo `Fixes: kairos-io/<repo>#<n>` when the issue lives elsewhere. This is what makes GitHub auto-link the two and auto-close the issue when the PR merges; without it the ticket has to be closed manually and the linkage is lost in the audit trail.
+Every PR the swarm opens which closes one or more issues includes a `Fixes: #<n>` (or `Fixes #<n>` — GitHub accepts both) line in its body, one per resolved issue, cross-repo `Fixes: kairos-io/<repo>#<n>` when the issue lives elsewhere. This is what makes GitHub auto-link the two and auto-close the issue when the PR merges; without it the ticket has to be closed manually and the linkage is lost in the audit trail.
 
 Applies at PR-open time and at every PR-body edit. If the resolved-issue set changes mid-flight (a new duplicate is discovered, a wrongly-attributed one is dropped), edit the PR body to match.
 
@@ -57,7 +57,7 @@ Applies at PR-open time and at every PR-body edit. If the resolved-issue set cha
 
 If an issue or PR already has an assignee that is not the agent's own account, the agent leaves it alone — no comments, no takeover, no "helpful" suggestions. The only exception is when the assignee explicitly `@mentions` the agent asking for help.
 
-**Self-assignment carve-out.** A ticket whose sole assignee is its own author is treated as unassigned for this rule. The block exists to keep the agent off tickets a *different* human is already triaging, not to lock the fleet out of every human-authored PR (contributors routinely self-assign their own PRs). If the assignee set contains any login other than the ticket author, the rule applies as written.
+**Self-assignment carve-out.** A ticket whose sole assignee is its own author is treated as unassigned for this rule. The block exists to keep the agent off tickets a *different* human is already triaging, not to lock the swarm out of every human-authored PR (contributors routinely self-assign their own PRs). If the assignee set contains any login other than the ticket author, the rule applies as written.
 
 ## 6. Clone repositories into the workspace
 
@@ -85,7 +85,7 @@ Before ANY read or write against `workspace/<repo>/` — pre-review checkout, co
 4. `git -C workspace/<repo> checkout <default_branch>` and fast-forward to `upstream/<default_branch>` per rule 7.
 5. Only then check out or create the working branch for the current ticket.
 
-Rationale: the fleet is not concurrent, but successive slots reuse the same clone. Leaving `HEAD` on the previous slot's branch (a `review-repro/<n>` from another ticket, a `triage/<n>-<slug>` mid-rebase) is what caused the round-1 review of #4452 to start on the wrong branch and required a mid-slot correction. Reset is cheap; incorrect starting state produces incorrect diffs, incorrect `pre_review`, and, if the miss is not caught, incorrect verdicts.
+Rationale: the swarm is not concurrent, but successive slots reuse the same clone. Leaving `HEAD` on the previous slot's branch (a `review-repro/<n>` from another ticket, a `triage/<n>-<slug>` mid-rebase) is what caused the round-1 review of #4452 to start on the wrong branch and required a mid-slot correction. Reset is cheap; incorrect starting state produces incorrect diffs, incorrect `pre_review`, and, if the miss is not caught, incorrect verdicts.
 
 Exception: if the current slot is resuming its OWN committing ticket from the previous iteration in the same manager invocation (chained per rule 11a on the SAME `owner/repo#n`), the reset is not required — the branch is already correct and clean. Any cross-ticket transition, and every fresh manager invocation, runs the full reset.
 
@@ -100,14 +100,14 @@ Reviews are the higher-priority workload because a stalled PR blocks a real cont
 
 ## 8a. Own open PRs are top priority
 
-Any pull request the fleet opened and has not yet seen merged or closed is checked at the start of every slot, ahead of the rule 8 pipeline. The check is cheap — one `gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open --json number,url,mergeable,reviewDecision,statusCheckRollup` per watched repo — and the manager only ACTS on a PR when at least one of these is true:
+Any pull request the swarm opened and has not yet seen merged or closed is checked at the start of every slot, ahead of the rule 8 pipeline. The check is cheap — one `gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open --json number,url,mergeable,reviewDecision,statusCheckRollup` per watched repo — and the manager only ACTS on a PR when at least one of these is true:
 
 - **CI is red.** Any status-check leaf on the rollup is `FAILURE` or `TIMED_OUT`. Fix forward: dispatch the coder / tester to address the failure, commit, push, `git push origin <branch>`. Do not force-push.
-- **A reviewer requested changes.** `reviewDecision == 'CHANGES_REQUESTED'`, or the PR has new comments on the branch since the fleet's last commit that name a file/line change. Dispatch the coder to address them, commit, push.
+- **A reviewer requested changes.** `reviewDecision == 'CHANGES_REQUESTED'`, or the PR has new comments on the branch since the swarm's last commit that name a file/line change. Dispatch the coder to address them, commit, push.
 - **A merge conflict landed.** `mergeable == 'CONFLICTING'`. Rebase `triage/<n>-<slug>` onto `upstream/<default>`, resolve, `git push --force-with-lease origin <branch>`. Force-with-lease is allowed on our own fork branches; rule 1's force-push ban is about *other contributors' branches* on upstream.
 - **The PR is closed unmerged.** Someone else closed it. Drop the ticket, log it in the audit trail, no follow-up push.
 
-Skip conditions — the manager does nothing this slot when none of the above hold and the PR is simply waiting: `MERGEABLE` + no failed checks + `reviewDecision` in `null` / `APPROVED` / `REVIEW_REQUIRED` (nobody's told us anything). Sitting on a maintainer waiting on us is not a reason to nudge; the fleet does not post "any updates?" comments.
+Skip conditions — the manager does nothing this slot when none of the above hold and the PR is simply waiting: `MERGEABLE` + no failed checks + `reviewDecision` in `null` / `APPROVED` / `REVIEW_REQUIRED` (nobody's told us anything). Sitting on a maintainer waiting on us is not a reason to nudge; the swarm does not post "any updates?" comments.
 
 Only after this queue drains does the manager fall through to rule 8's PR-review-then-issue-triage pipeline. In-flight envelopes still resume first per the existing rule; own-PR fixups create a fresh envelope scoped to the fixup work.
 
@@ -162,7 +162,7 @@ In either case, sitting out the rest of the slot is pure wall-clock waste. The m
 - Then the rule 8 pipeline (review PRs → triage issues) with the release-meta priority queue (rule 16).
 - Each chained pick still respects rules 5 (human-assigned skip), 12b (dormancy), and the working-hours window (rule 11).
 
-Only close the slot when the pick loop returns empty — every candidate the manager can reach is filtered out, dormant, or already fleet-owned and non-actionable. That is the only correct "nothing to do this slot" exit.
+Only close the slot when the pick loop returns empty — every candidate the manager can reach is filtered out, dormant, or already swarm-owned and non-actionable. That is the only correct "nothing to do this slot" exit.
 
 Guardrails so the chain does not turn into a runaway:
 
@@ -179,14 +179,14 @@ Self-assignment plus the initial disclosure comment (rule 4) are the visibility 
 - A PR the agent is reviewing (own-PR fixup or third-party review). Reviewers show up in the PR's `reviewRequests`/`reviews`, not `assignees` — self-assigning as reviewer confuses the assignee semantics maintainers use.
 - Any ticket where someone else is already assigned (rule 5 handles the skip; the self-assignment carve-out only applies when the sole assignee is the ticket author).
 
-The agent does not create, apply, or remove repository labels, and does not update GitHub Project (v2) status columns — those taxonomies belong to the human maintainers, and the fleet's access to them varies per repo. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
+The agent does not create, apply, or remove repository labels, and does not update GitHub Project (v2) status columns — those taxonomies belong to the human maintainers, and the swarm's access to them varies per repo. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
 
 ## 12b. Skip a resumed review when nothing changed
 
 An `awaiting-author` envelope is not automatically work. Before treating one as in-flight for the current slot, the manager re-polls the PR and compares against the envelope's `meta.last_seen`:
 
 - **`headRefOid` unchanged** since our last recorded value, AND
-- **No comments or reviews from anyone other than the fleet** after our last posted comment.
+- **No comments or reviews from anyone other than the swarm** after our last posted comment.
 
 If both hold, the envelope is dormant — silently update `meta.last_seen.checked_at` (so the dashboard shows "last checked at X"), do NOT open a slot row, do NOT count as work, and continue to the next queue item (own-PR check or rule 8 pipeline). Repeat visits from cron cost only the cheap `gh pr view` fetch, not a full slot.
 
@@ -269,7 +269,7 @@ If no matching release-meta ticket exists, the priority queue is empty and the p
 
 ## 17. Manager holds sole authority for external actions
 
-The agent runs as a small fleet of specialized roles — **manager**, **coder**, **tester**, **docs**, **reviewer** — described in [`docs/agent-roles.md`](docs/agent-roles.md). Only the manager makes state-changing calls against GitHub or against the fork remote:
+The agent runs as a small swarm of specialized roles — **manager**, **coder**, **tester**, **docs**, **reviewer** — described in [`docs/agent-roles.md`](docs/agent-roles.md). Only the manager makes state-changing calls against GitHub or against the fork remote:
 
 - Self-assign, unassign.
 - Issue and PR comments (including review bodies).
@@ -311,7 +311,7 @@ Two artifacts leave the workspace at this step:
 1. **Human-readable summary** — a comment on the issue, chronologically ordered by phase and round. Every entry names the role, the time, the artifact it produced (files, commits, tests, logs), and, for review rounds, the reviewer's verdict and comments. This is prose a maintainer can skim without decoding JSON.
 2. **Machine-readable envelope** — the full `envelope.json`, embedded inside a collapsed `<details><summary>envelope.json</summary>` block at the bottom of the summary comment as a fenced ` ```json ` code block. Do NOT upload it as a gist and do NOT push it as a file to the repo. The `<details>` fold keeps the thread readable while a single click reveals the machine-readable envelope right next to the human summary.
 
-**No cost information leaves the workspace.** The summary comment, the PR body, release-note drafts, and any other human-visible artifact the manager produces MUST NOT contain token counts, USD amounts, per-role cost breakdowns, or budget-ledger references. Cost lives in the local audit DB and the envelope's `cost` block only — external readers on kairos-io do not need to see what a fleet run cost.
+**No cost information leaves the workspace.** The summary comment, the PR body, release-note drafts, and any other human-visible artifact the manager produces MUST NOT contain token counts, USD amounts, per-role cost breakdowns, or budget-ledger references. Cost lives in the local audit DB and the envelope's `cost` block only — external readers on kairos-io do not need to see what a swarm run cost.
 
 The PR description carries a link to the summary comment.
 

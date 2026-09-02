@@ -76,7 +76,7 @@ schedule:
   # Days of the week the agent runs on (0 = Sunday … 6 = Saturday).
   active_weekdays: [1, 2, 3, 4, 5]
 
-# Multi-role swarm. See docs/agent-roles.md and RULES.md rules 17-19, 22.
+# The Second Foundation — multi-role. See docs/agent-roles.md and RULES.md rules 17-19, 22.
 roles:
   # Each role runs in its own subprocess (rule 22). This gives clean crash
   # boundaries, fresh LLM context per role, and structural reviewer
@@ -91,7 +91,7 @@ roles:
   state_dir: workspace/.state
 
   # How many tickets the manager keeps in flight at once. Kept at 1 while
-  # the swarm stabilizes; slot alignment (rule 11) is simpler with a
+  # the Second Foundation stabilizes; slot alignment (rule 11) is simpler with a
   # single-ticket queue. Raise later once the runtime is proven.
   concurrency: 1
 

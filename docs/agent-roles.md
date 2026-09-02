@@ -1,6 +1,6 @@
 # Agent roles
 
-The triage agent is not a single loop. It is a small swarm of specialized roles coordinated by a **manager**. Workers produce artifacts, review each other's output, and pass drafts back and forth until they agree the ticket is done. Only the manager touches GitHub. See `RULES.md` rules 17, 18, 19 for the hard constraints this document elaborates on.
+The triage agent is not a single loop. It is a small collective of specialized roles coordinated by a **manager**. Workers produce artifacts, review each other's output, and pass drafts back and forth until they agree the ticket is done. Only the manager touches GitHub. See `RULES.md` rules 17, 18, 19 for the hard constraints this document elaborates on.
 
 ## Roles
 
@@ -113,7 +113,7 @@ Every handoff carries this JSON envelope, persisted to `workspace/.state/<repo>/
 
 ## Third-party PR handling
 
-Reviewer verdicts on PRs the swarm did NOT author (Renovate, human contributors) never trigger the coder/tester/docs loop — the swarm has no license to rewrite someone else's branch. The manager instead:
+Reviewer verdicts on PRs the Second Foundation did NOT author (Renovate, human contributors) never trigger the coder/tester/docs loop — the Second Foundation has no license to rewrite someone else's branch. The manager instead:
 
 - On `approve`: posts an approving review, drops the ticket for the cycle. The PR author or a maintainer merges it.
 - On `changes-requested`: posts the review with the itemized comments as inline suggestions, leaves the self-assignment in place, publishes the audit trail, and drops the ticket. At the next slot boundary the manager re-polls: if the author has pushed new commits, the pre-review data is regenerated and the reviewer runs again with `round++`. If `round + 1 > roles.max_review_rounds` without a push, the ticket escalates per rule 18.

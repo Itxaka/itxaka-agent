@@ -89,6 +89,8 @@ Rationale: the fleet is not concurrent, but successive slots reuse the same clon
 
 Exception: if the current slot is resuming its OWN committing ticket from the previous iteration in the same manager invocation (chained per rule 11a on the SAME `owner/repo#n`), the reset is not required — the branch is already correct and clean. Any cross-ticket transition, and every fresh manager invocation, runs the full reset.
 
+## 8. PR review comes before issue triage
+
 Each cycle the agent processes work in this fixed order:
 
 1. Open pull requests on `kairos-io/kairos` and `kairos-io/auroraboot` that are missing a review from the agent (or from any reviewer, depending on `config/rules.yaml`).

@@ -136,19 +136,24 @@ Time inside the working window is divided into 30-minute slots aligned to the ho
 
 This keeps the agent's pace human-observable and gives reviewers a chance to react before the next action lands.
 
-### 11a. Comment-only actions are free — chain to the next queue item
+### 11a. Non-committing iterations are free — chain to the next queue item
 
-A slot whose only mutating action was **posting one or more GitHub comments** (`gh issue comment`, `gh pr comment`, an inline `gh pr review` body, a `gh pr edit --body` metadata retouch, or a rule 4a linked-issue progress note) does NOT consume the slot's "one ticket" budget. Comments are cheap: no branch, no push, no subagent dispatch, no CI trigger. After posting, the ticket is by construction waiting on a human (author, reviewer, maintainer) — sitting on the same envelope for the rest of the slot buys nothing but delay.
+An iteration on a candidate ticket only **commits** the slot to that ticket when it did real work: pushed a branch, opened / edited a PR, or dispatched a coder / tester / reviewer / docs subagent. Anything less is a **non-committing iteration** and does NOT consume the slot's "one ticket" budget. The two flavors:
 
-When this holds, the manager immediately re-enters the pick loop for another ticket in the same slot:
+- **Zero-write iterations** — the manager polled a candidate and found nothing to do (a rule 12b dormant `awaiting-author` envelope, a rule 8a own PR that is `MERGEABLE` with no CHANGES_REQUESTED and no new comments, a fresh queue item that got filtered by rule 5 or `rules.yaml` at intake). The `meta.last_seen.checked_at` bump on the envelope is not "work" — it is bookkeeping.
+- **Comment-only iterations** — the manager's only mutating action was posting comments (`gh issue comment`, `gh pr comment`, an inline `gh pr review` body, a `gh pr edit --body` metadata retouch, or a rule 4a linked-issue progress note). After posting, the ticket is by construction waiting on a human.
+
+In either case, sitting out the rest of the slot is pure wall-clock waste. The manager MUST re-enter the pick loop and take another candidate in the same slot; the agent should always be advancing something as long as the queue has work. Re-entry runs the full pick order:
 
 - Own-PR check first (rule 8a) on every watched repo.
 - Then the rule 8 pipeline (review PRs → triage issues) with the release-meta priority queue (rule 16).
 - Each chained pick still respects rules 5 (human-assigned skip), 12b (dormancy), and the working-hours window (rule 11).
 
+Only close the slot when the pick loop returns empty — every candidate the manager can reach is filtered out, dormant, or already fleet-owned and non-actionable. That is the only correct "nothing to do this slot" exit.
+
 Guardrails so the chain does not turn into a runaway:
 
-- **Cap chained picks at 3 per slot.** After the third comment-only chain, close the slot even if the pipeline still has candidates; the cron's next tick will drain the rest.
+- **Cap chained picks at 5 per slot.** After the fifth iteration (committing or not), close the slot even if the pipeline still has candidates; the cron's next tick will drain the rest.
 - A chained pick that turns into real work (coder/tester/reviewer dispatch, branch push, PR open) ends the chain — that ticket becomes the slot's committed ticket and the slot closes on its outcome.
 - The chain resets at every slot boundary; there is no cross-slot carryover.
 

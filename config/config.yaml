@@ -71,7 +71,7 @@ schedule:
 
   # Each ticket occupies at least one slot of this length. The next-pickup
   # decision runs at slot boundaries, not on task completion.
-  slot_minutes: 30
+  slot_minutes: 15
 
   # Days of the week the agent runs on (0 = Sunday … 6 = Saturday).
   active_weekdays: [1, 2, 3, 4, 5]

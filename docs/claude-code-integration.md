@@ -14,26 +14,28 @@ The triage agent runs entirely inside Claude Code. It is not a standalone binary
 | Rule 19 envelope                            | JSON file on disk under `workspace/.state/<repo>/<ticket>/envelope.json`          |
 | Rule 20 audit publish                       | Manager runs `gh issue comment` / `gh pr create` after the reviewer approves      |
 | Rule 21 cost budget                         | Manager totals `subagent_tokens` from each Agent result into `workspace/.state/budget.json` |
-| Rule 11 30-minute slot loop, 08:00–17:00    | `/schedule` cloud routine — one manager invocation per slot                        |
+| Rule 11 15-minute slot loop, 08:00–17:00    | `/schedule` cloud routine — one manager invocation per slot                        |
+| Rule 11a non-committing chain, cap 5        | Manager re-enters the pick loop in-process; same `slot_id`, per-iter `chain_index` |
+| Dashboard regen on slot close               | Manager runs `bash dashboard/generate.sh` after the closing UPDATE                 |
 | GitHub reads                                | `gh api` / `gh issue list` via `Bash`                                             |
 | QEMU reproduction (rules 3, 9)              | Tester invokes the `driving-qemu-vms` and `testing-immucore-with-qemu` skills     |
 
 ## Entry points
 
-- **Scheduled** — a `/schedule` cloud routine ticks every 30 minutes on active weekdays inside the working window and invokes `/kairos-triage-run`, which spawns the manager for one slot's work.
+- **Scheduled** — a `/schedule` cloud routine ticks every 15 minutes on active weekdays inside the working window and invokes `/kairos-triage-run`, which spawns the manager for one slot's work.
 - **Manual** — running `/kairos-triage-run` from an interactive session does the same thing without waiting for the next tick. Useful for smoke tests and dry runs.
 
 ## One invocation, one slot
 
-Each manager invocation is intended to progress exactly the amount of work that fits in one 30-minute slot. Concretely:
+Each manager invocation is intended to progress exactly the amount of work that fits in one 15-minute slot. Concretely:
 
 1. Load `config/config.yaml` and check the working window + budget ledger.
 2. If a ticket already has an in-flight envelope, advance it by as many phases as fit in the timeout (coding → testing → docs → reviewing → manager-final).
 3. If no in-flight envelope exists, pick one new ticket from the priority queue (rule 16) or the plain queue and create its envelope in `intake`.
 4. On `manager-final` or `escalated`, publish the audit trail (rule 20) and close the envelope.
-5. Exit. The next tick picks up where this one left off, either the same in-flight ticket in a later phase or a new ticket.
-
-This satisfies rule 11 by construction: a new ticket is only picked at the start of a slot, and even a fast finish does not immediately grab another one — the next tick does.
+5. If the iteration did NOT commit the slot to a ticket — an in-flight envelope was dormant per rule 12b, an own PR was quiet per rule 8a, or the only action was a comment post — re-enter the pick loop in the same invocation (rule 11a). Cap at five chained iterations; the sixth defers to the next tick.
+6. On close, run `bash dashboard/generate.sh` so `dashboard/index.html` reflects the ledger before exit.
+7. Exit. The next tick picks up where this one left off — the same in-flight ticket in a later phase, or a new candidate the chain did not reach.
 
 ## File layout added for the integration
 

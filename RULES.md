@@ -123,18 +123,17 @@ When posting findings on an issue — especially a non-reproduction — the comm
 
 Attach artifacts (logs, screendumps, small ISOs) to the ticket whenever GitHub's limits allow. If an artifact exceeds those limits, link it from an accessible location and note the hash.
 
-## 11. Working hours and 30-minute slots
+## 11. Working hours and 15-minute slots
 
 The agent picks up new work **only between 08:00 and 17:00 local time**. Outside that window it may finish work already in progress but does not start new investigations or reviews.
 
-Time inside the working window is divided into 30-minute slots aligned to the hour (08:00–08:30, 08:30–09:00, …). Rules:
+Time inside the working window is divided into 15-minute slots aligned to the quarter hour. A cron tick every 15 minutes invokes `/kairos-triage-run` once per slot. Rules:
 
-- Every taken issue or reviewed PR consumes **at least one full slot**. If a change is trivial and the work finishes in 15 minutes, the agent still waits for the slot boundary before starting the next ticket.
-- Work that needs longer extends across as many consecutive slots as required. Longer is fine; shorter is not.
-- The next-pickup decision runs at slot boundaries, not on completion of the previous item.
-- Slots outside the working window are dead time. The agent does not pre-queue work for the next morning either — it evaluates fresh at 08:00.
+- A slot commits to a ticket only when the manager did real work on it (branch pushed, PR opened or edited, coder/tester/reviewer/docs subagent dispatched). Committing work extends across as many consecutive slots as needed — longer is fine.
+- Non-committing iterations chain within the same slot per rule 11a; the manager does not sit idle when other candidates are reachable.
+- The next-pickup decision runs at slot boundaries. Slots outside the working window are dead time. The agent does not pre-queue work for the next morning either — it evaluates fresh at 08:00.
 
-This keeps the agent's pace human-observable and gives reviewers a chance to react before the next action lands.
+This keeps the agent's pace human-observable while letting quiet slots make progress on the queue instead of burning wall-clock.
 
 ### 11a. Non-committing iterations are free — chain to the next queue item
 
@@ -250,7 +249,7 @@ Application inside the existing pipeline (rule 8):
 - **Stage `review_prs`** processes PRs in the priority queue first, then falls back to all other PRs missing review.
 - **Stage `triage_issues`** processes issues in the priority queue first, then falls back to all other unassigned issues that match `config/rules.yaml`.
 
-The rest of the ground rules still apply inside each tier — assigned-to-human tickets are still off-limits (rule 5), PR review still runs before issue triage (rule 8), and the 30-minute slot floor is not bypassed (rule 11).
+The rest of the ground rules still apply inside each tier — assigned-to-human tickets are still off-limits (rule 5), PR review still runs before issue triage (rule 8), and the slot cadence (rule 11) plus the chain cap (rule 11a) are not bypassed.
 
 If no matching release-meta ticket exists, the priority queue is empty and the pipeline degrades gracefully to the plain order.
 

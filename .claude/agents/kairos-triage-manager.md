@@ -28,7 +28,7 @@ The project root is the current working directory. If it is not, stop — do not
 
 ## One invocation = one slot
 
-You are invoked once per 30-minute slot. Do exactly one slot's worth of work and exit. Do not loop internally to consume multiple slots; the scheduler will call you again.
+You are invoked once per 15-minute slot. Do exactly one slot's worth of work — one committing ticket, or one or more non-committing iterations chained per rule 11a — and exit. Do not loop internally to consume multiple slots; the scheduler will call you again.
 
 ### Audit database
 

@@ -1,13 +1,13 @@
 ---
 name: kairos-triage-run
-description: Run one slot of the Kairos triage agent. Spawns the kairos-triage-manager subagent to progress one ticket (or idle if there is nothing to do). Invoke manually with `/kairos-triage-run`, or wire to a `/schedule` routine that ticks every 30 minutes on active weekdays inside the working window.
+description: Run one slot of the Kairos triage agent. Spawns the kairos-triage-manager subagent to progress one ticket (or chain across several non-committing iterations per rule 11a, or idle if the queue is empty). Invoke manually with `/kairos-triage-run`, or wire to a `/schedule` routine that ticks every 15 minutes on active weekdays inside the working window.
 ---
 
 # kairos-triage-run
 
 This skill runs exactly **one slot** of the Kairos triage agent.
 
-A slot is 30 minutes by default (`schedule.slot_minutes` in `config/config.yaml`). The scheduler is expected to invoke this skill once per slot. Manual invocation is also supported for smoke tests and dry runs.
+A slot is 15 minutes by default (`schedule.slot_minutes` in `config/config.yaml`). The scheduler is expected to invoke this skill once per slot. Manual invocation is also supported for smoke tests and dry runs. Within a slot the manager may chain non-committing iterations (rule 11a) — up to five candidate tickets touched by one invocation — so a "slot" is a scheduling unit, not necessarily a single ticket.
 
 ## What this skill does
 
@@ -32,7 +32,7 @@ A slot is 30 minutes by default (`schedule.slot_minutes` in `config/config.yaml`
 To run this on a cadence, create a scheduled routine via the `schedule` skill:
 
 ```
-/schedule create every 30 minutes 8:00-17:00 mon-fri run /kairos-triage-run
+/schedule create every 15 minutes 8:00-17:00 mon-fri run /kairos-triage-run
 ```
 
 Adjust the times to match `schedule.working_hours` in `config/config.yaml`. Adjust the days to match `schedule.active_weekdays`.

@@ -126,7 +126,26 @@ This keeps the agent's pace human-observable and gives reviewers a chance to rea
 
 ## 12. Mark ongoing tickets clearly
 
-Self-assignment (rule 4's take-over step) plus the initial disclosure comment (rule 4) are the sole visibility signals. The agent does not create, apply, or remove repository labels, and does not update GitHub Project (v2) status columns — those taxonomies belong to the human maintainers, and the fleet's access to them varies per repo. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
+Self-assignment plus the initial disclosure comment (rule 4) are the visibility signals — but only for **issues the agent is actively investigating or coding on**. Do NOT self-assign on:
+
+- A PR the agent is reviewing (own-PR fixup or third-party review). Reviewers show up in the PR's `reviewRequests`/`reviews`, not `assignees` — self-assigning as reviewer confuses the assignee semantics maintainers use.
+- Any ticket where someone else is already assigned (rule 5 handles the skip; the self-assignment carve-out only applies when the sole assignee is the ticket author).
+
+The agent does not create, apply, or remove repository labels, and does not update GitHub Project (v2) status columns — those taxonomies belong to the human maintainers, and the fleet's access to them varies per repo. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
+
+## 12a. Review comments go inline on the diff
+
+Every reviewer finding gets posted as an **inline review comment attached to the exact `file:line`** it names, using the GitHub Reviews API (`gh api /repos/<owner>/<repo>/pulls/<n>/reviews`) with a `comments[]` payload — not as a top-level PR comment. Inline comments render alongside the diff on the Files-changed tab, which is the only surface the PR author actually looks at.
+
+When the reviewer's `patch` field carries a raw replacement fit for the commented line range, the manager wraps it in a GitHub suggestion block:
+
+```suggestion
+<the fixed line(s) verbatim>
+```
+
+Suggestion blocks give the PR author a one-click "Commit suggestion" button on GitHub — the fastest possible round-trip when the fix is obvious. When no `patch` is available (the fix is architectural, needs prose, or spans lines outside the commented range), the manager posts only the prose from the reviewer's `problem` + `suggestion`, no fake ```suggestion``` block.
+
+Top-level PR comments are reserved for the audit summary (rule 20) and the initial disclosure (rule 4). Never dump per-finding text into a top-level comment.
 
 ## 13. Always identify as an automated agent
 

@@ -111,9 +111,13 @@ CREATE TABLE IF NOT EXISTS comments (
   file        TEXT,
   line        INTEGER,
   problem     TEXT NOT NULL,
-  suggestion  TEXT,
+  suggestion  TEXT,                          -- prose fix
+  patch       TEXT,                          -- optional raw replacement, posted as a GitHub suggestion block
   ts          TEXT NOT NULL
 );
+
+-- Migration for DBs created before `patch` existed.
+ALTER TABLE comments ADD COLUMN patch TEXT;
 
 -- Full prose report from a worker's own hand — free-form journal written
 -- by the role during its work, slurped by the manager after the subagent

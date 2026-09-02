@@ -72,7 +72,7 @@ From that point on, every state-machine milestone appends a row:
   - `error` on any recoverable failure (role=whatever was running, action=`error`, note=one line).
 - `tickets` — one `INSERT OR IGNORE` at intake (populating owner/repo/number/kind/author/third_party/first_seen_at), then an `UPDATE` on `last_seen_at` and `terminal_phase` at slot end.
 - `verdicts` — one row per reviewer verdict, in addition to the `events.verdict` row above.
-- `comments` — one row per `file:line:problem:suggestion` entry inside the reviewer's verdict JSON. Insert right after `verdicts`, using the same `readfile()`-through-temp-file pattern for the `problem` and `suggestion` fields since either can be multiline. `role` is `'reviewer'` for the reviewer's output; if the tester or coder ever produces structured comments, that role goes here instead.
+- `comments` — one row per `file:line` entry inside the reviewer's verdict JSON, storing `problem`, `suggestion`, and the optional `patch` (raw replacement text used for GitHub suggestion blocks). Insert right after `verdicts`, using the `readfile()`-through-temp-file pattern for `problem`, `suggestion`, and `patch` since any of them can be multiline. `role` is `'reviewer'` for the reviewer's output; if the tester or coder ever produces structured comments, that role goes here instead.
 - `artifacts` — one row per commit produced by coder/tester, per test/doc/log/screendump path added to `envelope.artifacts`, and per posted PR review or issue comment (kind `'pr_review'` / `'issue_comment'`; in dry-run, insert them anyway with `note='dry-run'` so the dashboard shows what would have been posted).
 - `costs` — one row per subagent return, aligned with the `events.return` row. `tokens` from the Agent result, `usd = 0.0` until pricing is wired.
 - `worker_reports` — one row per subagent return. Every worker writes a prose journal to `workspace/.state/<owner>_<repo>/<n>/journals/<role>-round<N>.md` before returning. Right after the `Agent` returns, INSERT the row using SQLite's `readfile()` builtin for the two large TEXT fields — the CLI's argv `?` binding does not carry multi-line values reliably, so drop them into temp files and read them back with `readfile()`:
@@ -201,7 +201,7 @@ For the ticket you picked:
    ```
 
    The body states what you are about to do (review, or investigate and reproduce).
-2. Self-assign: `gh issue edit <n> --add-assignee <agent.github_user>` (or `gh pr edit`). This is the sole visibility signal per rule 12 — do NOT create or apply repository labels, and do NOT update GitHub Project (v2) status columns.
+2. Self-assign **for issues only**: `gh issue edit <n> --add-assignee <agent.github_user>`. **Do NOT self-assign on any PR** — reviewers belong in `reviewRequests`/`reviews`, not `assignees`, and self-assigning as reviewer confuses maintainer tooling. Rule 12 spells this out. Do NOT create or apply repository labels, and do NOT update GitHub Project (v2) status columns.
 3. Create the envelope at `workspace/.state/<owner>_<repo>/<n>/envelope.json` with the schema from `docs/agent-roles.md`. Set `phase: coding` for issues, `phase: reviewing` for PRs.
 4. Ensure the fork clone exists at `workspace/<repo>/`. If not, `gh repo fork` (if the fork does not exist upstream on the agent account) and `git clone https://github.com/<fork_owner>/<repo>.git workspace/<repo>`. Add upstream: `git remote add upstream https://github.com/<owner>/<repo>.git`.
 5. Fetch upstream, fast-forward the default branch on the fork, push the updated default to the fork (rule 7). Create the working branch: `triage/<n>-<slug>` for issues, `review-repro/<n>` for PRs.
@@ -266,7 +266,25 @@ On `reviewing`:
 A PR whose author is not `agent.github_user` is third-party (Renovate, human contributors). The fleet has no license to rewrite someone else's branch, so the coder/tester/docs pipeline is skipped:
 
 - On `approve`: post an approving review (`gh pr review --approve --body <disclosure + one-line summary>`), publish the audit trail, set `phase: done`, and drop the ticket for the cycle.
-- On `changes-requested`: post `gh pr review --request-changes --body <...>` plus one `gh pr comment` per specific comment (inline suggestions where a line anchor is present), publish the audit trail, leave the self-assignment in place, and set `phase: awaiting-author`. The envelope is NOT `done` — the next slot re-polls this ticket, and if the author has pushed new commits since the recorded `head_sha`, regenerate `pre_review` and dispatch the reviewer again with `round++`. If `max_review_rounds` is reached without a new push, escalate per rule 18.
+- On `changes-requested`: post the review AND every per-finding comment as inline diff comments in a single API call — this is rule 12a. Assemble the payload as:
+  ```
+  gh api /repos/<owner>/<repo>/pulls/<n>/reviews -X POST \
+    -f event=REQUEST_CHANGES \
+    -f body='<disclosure block + one-paragraph summary>' \
+    -F 'comments[]={"path":"<file>","line":<n>,"side":"RIGHT","body":"<per-finding body>"}' \
+    -F 'comments[]=...'
+  ```
+  Each `comments[]` body is: the reviewer's `problem` sentence, a blank line, the reviewer's `suggestion` prose, and — when the reviewer supplied a `patch` field with a raw line replacement — a GitHub suggestion block:
+  ````
+  ```suggestion
+  <patch verbatim>
+  ```
+  ````
+  Suggestion blocks give the PR author a one-click apply button. Omit the block when the reviewer's fix is architectural or spans lines outside the commented range; posting a fake suggestion that GitHub cannot apply is worse than no suggestion.
+
+  Do NOT post per-finding text as top-level `gh pr comment` calls — those don't attach to the diff and the PR author has to scroll a separate tab. Top-level comments are reserved for the audit summary and the initial disclosure.
+
+  After the review posts, publish the audit trail, leave the PR untouched otherwise (no self-assignment — rule 12), and set `phase: awaiting-author`. The envelope is NOT `done` — the next slot re-polls this ticket, and if the author has pushed new commits since the recorded `head_sha`, regenerate `pre_review` and dispatch the reviewer again with `round++`. If `max_review_rounds` is reached without a new push, escalate per rule 18.
 
 `awaiting-author` is a terminal-for-this-slot state; it does not consume the ticket, only the slot. On the next slot boundary the manager re-picks the same envelope if the fleet is still assigned.
 

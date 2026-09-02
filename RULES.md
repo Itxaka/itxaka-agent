@@ -136,6 +136,24 @@ Time inside the working window is divided into 30-minute slots aligned to the ho
 
 This keeps the agent's pace human-observable and gives reviewers a chance to react before the next action lands.
 
+### 11a. Comment-only actions are free — chain to the next queue item
+
+A slot whose only mutating action was **posting one or more GitHub comments** (`gh issue comment`, `gh pr comment`, an inline `gh pr review` body, a `gh pr edit --body` metadata retouch, or a rule 4a linked-issue progress note) does NOT consume the slot's "one ticket" budget. Comments are cheap: no branch, no push, no subagent dispatch, no CI trigger. After posting, the ticket is by construction waiting on a human (author, reviewer, maintainer) — sitting on the same envelope for the rest of the slot buys nothing but delay.
+
+When this holds, the manager immediately re-enters the pick loop for another ticket in the same slot:
+
+- Own-PR check first (rule 8a) on every watched repo.
+- Then the rule 8 pipeline (review PRs → triage issues) with the release-meta priority queue (rule 16).
+- Each chained pick still respects rules 5 (human-assigned skip), 12b (dormancy), and the working-hours window (rule 11).
+
+Guardrails so the chain does not turn into a runaway:
+
+- **Cap chained picks at 3 per slot.** After the third comment-only chain, close the slot even if the pipeline still has candidates; the cron's next tick will drain the rest.
+- A chained pick that turns into real work (coder/tester/reviewer dispatch, branch push, PR open) ends the chain — that ticket becomes the slot's committed ticket and the slot closes on its outcome.
+- The chain resets at every slot boundary; there is no cross-slot carryover.
+
+Audit trail: every chained comment-only iteration writes its own `events` row (`comment_posted`, `chain_index=N`) against the same `slots.slot_id`, so the dashboard shows one slot with multiple comment artifacts rather than N phantom slots. `progress_note` on the closing UPDATE names each ticket touched, in order.
+
 ## 12. Mark ongoing tickets clearly
 
 Self-assignment plus the initial disclosure comment (rule 4) are the visibility signals — but only for **issues the agent is actively investigating or coding on**. Do NOT self-assign on:

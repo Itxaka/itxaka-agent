@@ -110,12 +110,12 @@ budget:
   # Soft threshold — a warning is logged the first time it is crossed in a
   # window. Work continues. Useful for spotting a runaway before the hard
   # cap trips.
-  usd_soft_cap: 15.00
+  usd_soft_cap: 10000.00
 
   # Hard threshold — the manager finishes in-flight work, publishes its
   # audit trail, then stops picking up new tickets until the rolling total
   # falls back below this line as the window advances.
-  usd_cap: 20.00
+  usd_cap: 10000.00
 
   # Persistent rolling-window ledger. Survives restarts.
   ledger_path: workspace/.state/budget.json

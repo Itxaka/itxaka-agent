@@ -29,3 +29,6 @@ config/rules.local.yaml
 
 # Claude Code cron/scheduled-task lock file — session-local.
 .claude/scheduled_tasks.lock
+
+# Per-machine permission allowlist — never ship.
+.claude/settings.local.json

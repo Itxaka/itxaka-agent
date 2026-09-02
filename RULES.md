@@ -75,7 +75,19 @@ Before creating a working branch the agent:
 
 No branching from stale local state. No branching from feature branches. No committing to `main` directly.
 
-## 8. PR review comes before issue triage
+## 7a. Reset the clone to a clean slate at the start of every ticket
+
+Before ANY read or write against `workspace/<repo>/` — pre-review checkout, coder dispatch, tester dispatch, fixup rebase, or any inspection that reads working-tree files — the manager brings the clone to a known-clean state:
+
+1. `git -C workspace/<repo> fetch --prune upstream` and `git -C workspace/<repo> fetch --prune origin`.
+2. `git -C workspace/<repo> reset --hard HEAD` — drop any working-tree modifications and staged changes.
+3. `git -C workspace/<repo> clean -fdx` — remove untracked files and directories (build output, IDE noise, half-finished repro scripts from an earlier slot).
+4. `git -C workspace/<repo> checkout <default_branch>` and fast-forward to `upstream/<default_branch>` per rule 7.
+5. Only then check out or create the working branch for the current ticket.
+
+Rationale: the fleet is not concurrent, but successive slots reuse the same clone. Leaving `HEAD` on the previous slot's branch (a `review-repro/<n>` from another ticket, a `triage/<n>-<slug>` mid-rebase) is what caused the round-1 review of #4452 to start on the wrong branch and required a mid-slot correction. Reset is cheap; incorrect starting state produces incorrect diffs, incorrect `pre_review`, and, if the miss is not caught, incorrect verdicts.
+
+Exception: if the current slot is resuming its OWN committing ticket from the previous iteration in the same manager invocation (chained per rule 11a on the SAME `owner/repo#n`), the reset is not required — the branch is already correct and clean. Any cross-ticket transition, and every fresh manager invocation, runs the full reset.
 
 Each cycle the agent processes work in this fixed order:
 

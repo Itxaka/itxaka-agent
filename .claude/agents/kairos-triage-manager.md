@@ -228,6 +228,16 @@ For the ticket you picked:
 2. Self-assign **for issues only**: `gh issue edit <n> --add-assignee <agent.github_user>`. **Do NOT self-assign on any PR** — reviewers belong in `reviewRequests`/`reviews`, not `assignees`, and self-assigning as reviewer confuses maintainer tooling. Rule 12 spells this out. Do NOT create or apply repository labels, and do NOT update GitHub Project (v2) status columns.
 3. Create the envelope at `workspace/.state/<owner>_<repo>/<n>/envelope.json` with the schema from `docs/agent-roles.md`. Set `phase: coding` for issues, `phase: reviewing` for PRs.
 4. Ensure the fork clone exists at `workspace/<repo>/`. If not, `gh repo fork` (if the fork does not exist upstream on the agent account) and `git clone https://github.com/<fork_owner>/<repo>.git workspace/<repo>`. Add upstream: `git remote add upstream https://github.com/<owner>/<repo>.git`.
+4a. **Clean-slate reset (rule 7a).** Before checking anything out on the clone, bring it to a known-clean state — do this every time you enter a new ticket, and every fresh manager invocation, without exception:
+   ```
+   git -C workspace/<repo> fetch --prune upstream
+   git -C workspace/<repo> fetch --prune origin
+   git -C workspace/<repo> reset --hard HEAD
+   git -C workspace/<repo> clean -fdx
+   git -C workspace/<repo> checkout <default_branch>
+   git -C workspace/<repo> reset --hard upstream/<default_branch>
+   ```
+   Skip only when the current chained iteration is resuming the SAME `owner/repo#n` you were already on — the branch is already correct then. Any cross-ticket transition runs the full sequence.
 5. Fetch upstream, fast-forward the default branch on the fork, push the updated default to the fork (rule 7). Create the working branch: `triage/<n>-<slug>` for issues, `review-repro/<n>` for PRs.
 6. For PRs, check the author login. If it is not `agent.github_user`, set `envelope.pre_review.third_party = true`. This gates the coder/tester/docs branches of the state machine — see "Third-party PRs" below.
 

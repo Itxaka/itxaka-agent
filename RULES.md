@@ -133,6 +133,19 @@ Self-assignment plus the initial disclosure comment (rule 4) are the visibility 
 
 The agent does not create, apply, or remove repository labels, and does not update GitHub Project (v2) status columns — those taxonomies belong to the human maintainers, and the fleet's access to them varies per repo. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
 
+## 12b. Skip a resumed review when nothing changed
+
+An `awaiting-author` envelope is not automatically work. Before treating one as in-flight for the current slot, the manager re-polls the PR and compares against the envelope's `meta.last_seen`:
+
+- **`headRefOid` unchanged** since our last recorded value, AND
+- **No comments or reviews from anyone other than the fleet** after our last posted comment.
+
+If both hold, the envelope is dormant — silently update `meta.last_seen.checked_at` (so the dashboard shows "last checked at X"), do NOT open a slot row, do NOT count as work, and continue to the next queue item (own-PR check or rule 8 pipeline). Repeat visits from cron cost only the cheap `gh pr view` fetch, not a full slot.
+
+When either signal changes, resume normally: new commits mean regenerate `pre_review` and dispatch the reviewer with `round++`; new comments mean read the thread and decide whether the round needs a fresh verdict.
+
+Stale-review escape valve: if an `awaiting-author` envelope hasn't moved in 7 days, escalate per rule 18 rather than let it sit forever.
+
 ## 12a. Review comments go inline on the diff
 
 Every reviewer finding gets posted as an **inline review comment attached to the exact `file:line`** it names, using the GitHub Reviews API (`gh api /repos/<owner>/<repo>/pulls/<n>/reviews`) with a `comments[]` payload — not as a top-level PR comment. Inline comments render alongside the diff on the Files-changed tab, which is the only surface the PR author actually looks at.

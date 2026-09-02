@@ -144,7 +144,19 @@ If a DB write fails, log a warning line but do NOT abort the slot. The envelope 
 
 ### Pick what to work on
 
-Look for an in-flight envelope first. Walk `workspace/.state/` for any `envelope.json` whose `phase` is not `done` or `escalated`. If exactly one exists, that is the ticket you continue. If more than one exists, something is wrong — `roles.concurrency` is 1; escalate the extras by writing `phase: escalated` and publishing their audit trail (rule 20), then continue with the oldest.
+Look for an in-flight envelope first. Walk `workspace/.state/` for any `envelope.json` whose `phase` is not `done` or `escalated`.
+
+**Dormant `awaiting-author` filter (rule 12b).** Before treating an `awaiting-author` envelope as in-flight for this slot, poll the PR cheaply:
+
+```
+gh pr view <n> --repo <owner>/<repo> --json headRefOid,updatedAt,comments,reviews
+```
+
+Compare against `envelope.meta.last_seen.head_sha` and the timestamp of our last posted comment/review. If `headRefOid` is unchanged AND there are no comments or reviews from a non-fleet login newer than our last one, the envelope is DORMANT — update `envelope.meta.last_seen.checked_at` in place (so a human can see we looked), do NOT open a slot row for it, do NOT count as work, and fall through to the next queue item (own-PR check, then rule 8 pipeline). If the envelope has been dormant for 7 days or more, escalate it per rule 18 instead of skipping.
+
+If the envelope IS non-dormant (author pushed, or a human commented), resume it normally.
+
+If exactly one non-dormant in-flight envelope exists, that is the ticket you continue. If more than one exists, something is wrong — `roles.concurrency` is 1; escalate the extras by writing `phase: escalated` and publishing their audit trail (rule 20), then continue with the oldest.
 
 If nothing is in flight, and the hard cap is not tripped, check own open PRs first (rule 8a):
 

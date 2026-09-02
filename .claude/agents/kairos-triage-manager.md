@@ -146,7 +146,29 @@ If a DB write fails, log a warning line but do NOT abort the slot. The envelope 
 
 Look for an in-flight envelope first. Walk `workspace/.state/` for any `envelope.json` whose `phase` is not `done` or `escalated`. If exactly one exists, that is the ticket you continue. If more than one exists, something is wrong — `roles.concurrency` is 1; escalate the extras by writing `phase: escalated` and publishing their audit trail (rule 20), then continue with the oldest.
 
-If nothing is in flight, and the hard cap is not tripped, pick one new ticket:
+If nothing is in flight, and the hard cap is not tripped, check own open PRs first (rule 8a):
+
+For each `repositories[]` entry:
+
+```
+gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open \
+  --json number,url,title,mergeable,reviewDecision,headRefOid,statusCheckRollup
+```
+
+For each returned PR, decide if it needs action:
+
+- **CI red** — any `statusCheckRollup[].conclusion` is `'FAILURE'` or `'TIMED_OUT'`. Pull the run's log with `gh run view <run-id> --repo <owner>/<repo> --log-failed`, dispatch the coder (and tester if a test suite is involved) to fix, commit, `git push origin <branch>` (no force). Create a fresh envelope for the fixup work, scoped to just this PR's branch.
+- **Reviewer requested changes** — `reviewDecision == 'CHANGES_REQUESTED'`, or `gh pr view <n> --json comments,reviews` shows new comments/reviews since `headRefOid` was last pushed. Dispatch the coder with the reviewer comments attached; commit and push.
+- **Merge conflict** — `mergeable == 'CONFLICTING'`. Rebase locally onto `upstream/<default>`, resolve, `git push --force-with-lease origin <branch>`. Force-with-lease is fine on our own fork branch (rule 1's force-push ban targets other contributors' branches on upstream).
+- **Closed unmerged** — the PR was closed by someone else. Log to the audit trail, drop the ticket, do NOT reopen or comment.
+
+If none of those hold — the PR is `MERGEABLE`, no failing checks, `reviewDecision` is `null` / `APPROVED` / `REVIEW_REQUIRED` — do NOTHING for this slot on that PR. Sitting on a maintainer is not a reason to comment; skip and continue to the next own PR or to the rule 8 pipeline.
+
+Take EXACTLY ONE fixup PR per slot (`roles.concurrency: 1`). If multiple own PRs need action, pick the oldest with CI red (functional break > cosmetic review > conflict), open a fresh envelope for it, and let the next slot pick up the rest.
+
+If no own PR needs action, fall through to the rule 8 pipeline below.
+
+If nothing is in flight, and the hard cap is not tripped, and no own PR needs action, pick one new ticket:
 
 1. Fetch open PRs on every `repositories[].watch.pull_requests == true` repo:
    ```

@@ -72,6 +72,19 @@ Each cycle the agent processes work in this fixed order:
 
 Reviews are the higher-priority workload because a stalled PR blocks a real contributor.
 
+## 8a. Own open PRs are top priority
+
+Any pull request the fleet opened and has not yet seen merged or closed is checked at the start of every slot, ahead of the rule 8 pipeline. The check is cheap — one `gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open --json number,url,mergeable,reviewDecision,statusCheckRollup` per watched repo — and the manager only ACTS on a PR when at least one of these is true:
+
+- **CI is red.** Any status-check leaf on the rollup is `FAILURE` or `TIMED_OUT`. Fix forward: dispatch the coder / tester to address the failure, commit, push, `git push origin <branch>`. Do not force-push.
+- **A reviewer requested changes.** `reviewDecision == 'CHANGES_REQUESTED'`, or the PR has new comments on the branch since the fleet's last commit that name a file/line change. Dispatch the coder to address them, commit, push.
+- **A merge conflict landed.** `mergeable == 'CONFLICTING'`. Rebase `triage/<n>-<slug>` onto `upstream/<default>`, resolve, `git push --force-with-lease origin <branch>`. Force-with-lease is allowed on our own fork branches; rule 1's force-push ban is about *other contributors' branches* on upstream.
+- **The PR is closed unmerged.** Someone else closed it. Drop the ticket, log it in the audit trail, no follow-up push.
+
+Skip conditions — the manager does nothing this slot when none of the above hold and the PR is simply waiting: `MERGEABLE` + no failed checks + `reviewDecision` in `null` / `APPROVED` / `REVIEW_REQUIRED` (nobody's told us anything). Sitting on a maintainer waiting on us is not a reason to nudge; the fleet does not post "any updates?" comments.
+
+Only after this queue drains does the manager fall through to rule 8's PR-review-then-issue-triage pipeline. In-flight envelopes still resume first per the existing rule; own-PR fixups create a fresh envelope scoped to the fixup work.
+
 ## 9. A review is more than reading a diff
 
 To review a PR the agent must:

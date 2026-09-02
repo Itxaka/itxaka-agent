@@ -306,37 +306,7 @@ A PR whose author is not `agent.github_user` is third-party (Renovate, human con
 2. Open the PR against upstream: `gh pr create --repo <owner>/<repo> --base <default_branch> --head <fork_owner>:<branch> --title <...> --body <...>`. The title and body must start with the rule 13 disclosure block. The body links the audit summary comment (which you post next). Reviewer requests happen automatically upstream via CODEOWNERS or org routing — do not pass `--reviewer` on create.
 3. Compose the audit summary from the envelope. Human-readable, chronological, one row per phase-round, listing role, commit shas / test paths / doc paths / log paths, and reviewer verdicts.
 4. Run the redactor from `audit.redact`: replace `$HOME` with `~`, MAC addresses with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs with `x.x.x.x`, and every `audit.redact.token_shapes` regex match with `<redacted>`. Run on both the summary and the envelope JSON. Also strip the top-level `cost` object from the envelope before it is uploaded — cost information stays local. If any role-authored text inside the envelope (comments, summaries, journal excerpts if you ever include them) mentions tokens or USD, mask those numbers as `<redacted>` too.
-5. Push the redacted envelope to the fork's `audit-trail` orphan branch as a file, then post the summary comment with a link to the raw URL. Mechanics:
-
-   ```
-   # bootstrap the orphan branch the first time (probe first)
-   if ! git -C workspace/<repo> ls-remote --exit-code origin audit-trail; then
-     git -C workspace/<repo> worktree add /tmp/audit-<slot_id> --orphan audit-trail
-     ( cd /tmp/audit-<slot_id> \
-       && git rm -rf . 2>/dev/null || true \
-       && git commit --allow-empty -m "audit: initial" \
-       && git push origin audit-trail )
-     git -C workspace/<repo> worktree remove /tmp/audit-<slot_id>
-   fi
-
-   # add this slot's envelope
-   git -C workspace/<repo> worktree add /tmp/audit-<slot_id> audit-trail
-   mkdir -p /tmp/audit-<slot_id>/.audit/<owner>_<repo>/<ticket>
-   cp <redacted_envelope_path> /tmp/audit-<slot_id>/.audit/<owner>_<repo>/<ticket>/envelope-<slot_id>.json
-   ( cd /tmp/audit-<slot_id> \
-     && git add .audit/<owner>_<repo>/<ticket>/envelope-<slot_id>.json \
-     && git -c user.name="itxaka-agent" -c user.email="itxaka-agent@users.noreply.github.com" commit -sm "audit: <owner>/<repo>#<n> slot <slot_seq>" \
-     && git push origin audit-trail )
-   git -C workspace/<repo> worktree remove /tmp/audit-<slot_id>
-   ```
-
-   Then compose the raw URL and link it from the summary comment:
-
-   ```
-   https://raw.githubusercontent.com/<fork_owner>/<repo>/audit-trail/.audit/<owner>_<repo>/<ticket>/envelope-<slot_id>.json
-   ```
-
-   Post the comment via `gh api /repos/<owner>/<repo>/issues/<n>/comments` with a body that ends with `**Envelope:** [download envelope.json](<raw_url>)`. Do NOT inline the envelope in the body, do NOT create a gist, do NOT push to any branch other than `audit-trail`, and do NOT push audit files to `upstream`. If the `audit-trail` push fails, log the error and fall through to posting the summary comment with a note that the envelope is available locally at `<envelope_path>` in the operator's workspace — do not abort the slot.
+5. Post the summary as an issue comment. Embed the redacted envelope directly in the comment body inside a collapsed `<details><summary>envelope.json</summary>` block containing a fenced ` ```json ` code block. Do NOT upload the envelope as a gist and do NOT push it as a file to the repo — the collapsed fold keeps the thread readable while a single click gives a human (or a scripted reader) the full envelope right next to the summary. If GitHub's 65 KB comment-body cap would be exceeded, trim `envelope.artifacts.logs[]` and `envelope.artifacts.screendumps[]` entries down to paths only (drop any embedded content), and if still too large, elide the middle of the JSON with a `"... elided ..."` marker rather than fall back to a gist.
 5a. The summary body — and any other human-visible artifact you write (PR body, release notes, issue comments, review bodies) — MUST NOT contain cost information. No token counts, no USD amounts, no per-role cost tables, no budget-ledger references. Cost stays inside the workspace: `costs`/`worker_reports` in the audit DB and the envelope's `cost` block are the only places USD/tokens are recorded, and the envelope's `cost` field is stripped by the redactor before the gist upload. External readers do not need to see what a fleet run cost.
 6. Leave `assignee` as is (the PR references the closed loop; a maintainer decides whether to unassign on merge).
 7. Set `phase: done`. Save the envelope one final time.

@@ -41,6 +41,18 @@ Every state change on an issue the agent is handling produces a comment on that 
 
 Silence is not allowed. Humans must be able to read the issue and know what the agent is doing.
 
+## 4a. Progress updates propagate to linked issues
+
+When a slot advances work on a fleet PR that resolves one or more issues (declared via `Fixes` / `Closes` in the PR body, or listed in the ticket the PR was opened from), post the per-slot progress note on **each** linked issue too, not only on the PR. A short one-liner is enough — what changed this slot, the new commit SHA, and a link back to the PR — but the issue must not stay silent while the PR sees several passes.
+
+Rationale: an issue whose comment thread stops on "opened PR #NNNN" while the PR churns through CI fixes reads as abandoned. A reader on the issue should always know the last time the agent touched the work.
+
+## 4b. Fleet PRs that resolve issues must carry a `Fixes` trailer
+
+Every PR the fleet opens which closes one or more issues includes a `Fixes: #<n>` (or `Fixes #<n>` — GitHub accepts both) line in its body, one per resolved issue, cross-repo `Fixes: kairos-io/<repo>#<n>` when the issue lives elsewhere. This is what makes GitHub auto-link the two and auto-close the issue when the PR merges; without it the ticket has to be closed manually and the linkage is lost in the audit trail.
+
+Applies at PR-open time and at every PR-body edit. If the resolved-issue set changes mid-flight (a new duplicate is discovered, a wrongly-attributed one is dropped), edit the PR body to match.
+
 ## 5. Do not touch tickets already assigned to a human
 
 If an issue or PR already has an assignee that is not the agent's own account, the agent leaves it alone — no comments, no takeover, no "helpful" suggestions. The only exception is when the assignee explicitly `@mentions` the agent asking for help.

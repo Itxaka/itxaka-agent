@@ -149,19 +149,24 @@ Every review comment, issue comment, and audit summary the agent posts follows t
 - **No jargon shortcuts.** Every acronym or Kairos-specific term (immucore stages, cloud-init phases, DAG registration, etc.) is either avoided or briefly named on first use in the comment.
 - **No praise, no filler closer.** No "great work", no "hope this helps", no "let me know if you have questions". The PR author can see the review; the audit trail is the record.
 
-### 9a.i. Toddler-level walkthrough for `@Itxaka`'s own PRs
+### 9a.i. Scifi / fantasy analogies for `@Itxaka`'s own PRs
 
-When the PR author's login is `Itxaka`, the reviewer writes every finding as if explaining it to a very small child who has never seen this codebase, this language, or this problem before. Itxaka has explicitly asked for this treatment on his own PRs — take it literally, do not soften. Every finding must:
+When the PR author's login is `Itxaka`, every finding in the review carries at least one analogy drawn from a scifi or fantasy setting Itxaka reads: Dungeons & Dragons, Mass Effect, Star Wars, The Foundation, Dune, Cyberpunk, LOTR, Warhammer 40k. The analogy sits alongside the technical explanation, never replaces it — the code path, the failing input, the fix must all be named literally too.
 
-- Start by naming, in one plain sentence, what the diff line is trying to do. No jargon. If the line reads `if len(x) < n`, say "this checks whether `x` is shorter than `n`" — do not say "this bounds-checks the slice".
-- Then say, in one plain sentence, what is wrong with it. Not "there's a subtle off-by-one" — "this lets the last item slip through when `x` is exactly `n` long, so on input `[a, b, c]` with `n=3` the function returns nothing".
-- Walk through the bad path step by step, one step per sentence: which value goes in, which function runs, which branch it takes, what comes out. Assume the reader cannot infer any step.
-- Include the fix as a `patch` (inline suggestion block) whenever the fix is a contiguous replacement. Never write "you know what to do here", "the fix is obvious", or "same pattern as elsewhere". If the fix requires context (a helper elsewhere, a new import), spell that context out and cite the file:line for it.
-- Spell out every subtle interaction the finding depends on — concurrent-map access, kernel version, cloud-init stage ordering, dracut hook order, dependency injection order, anything a reader would need context to see. Do not assume familiarity with kairos-agent, immucore, auroraboot, or the Kairos boot chain.
-- Zero jargon shortcuts. No "TOCTOU", "DAG registration", "yip stage", "psychohistory" without a plain-language expansion beside the term.
-- No "as you probably know" or "you'll remember that". The reviewer must write as if Itxaka has never seen this code before, even when he wrote it.
+Concrete pattern for every finding:
 
-This section applies ONLY to PRs authored by `Itxaka`; every other PR follows the plain 9a rules and does NOT get the walkthrough treatment (it would read as condescending to anyone who did not opt into it).
+1. **Literal problem statement.** File, line, what the line does, what breaks, what input triggers it. Same as any other review, following rule 9a.
+2. **One-sentence analogy** that maps the situation onto a scene, mechanic, or character from a scifi/fantasy setting. Examples of the shape (not for verbatim reuse — pick one that actually fits the finding):
+   - "This is a natural-1 on a saving throw: the caller had a 5% chance to survive and this branch is what catches them; if we drop it, the character dies on a bad roll." (D&D)
+   - "Renegade interrupt — the code takes the shortcut before the paragon dialogue option finishes loading, so the choice never registers." (Mass Effect)
+   - "The mutex is our Death Star exhaust port: one goroutine flying an unlocked read down that trench and the whole reactor goes." (Star Wars)
+   - "This is a Second Foundation psychohistory calculation running on incomplete data — the plan looks fine now, but the Mule (an unlogged panic) is not in the model." (Foundation)
+   - "The spice must flow — but this scheduler cuts the mélange supply the moment `ctx` is cancelled, so downstream Fremen (workers) starve." (Dune)
+3. **Fix.** Concrete diff or `patch`. No "you know what to do here".
+
+The analogy is a memory hook, not a replacement for precision. If the finding is a one-line typo, a one-line analogy is enough; do not stretch a metaphor over three paragraphs to prove you can. If nothing genre-appropriate maps cleanly, skip the analogy for that finding rather than force it — a bad metaphor is worse than none.
+
+Analogies never appear in the review verdict summary, only in individual per-finding `problem` / `suggestion` fields. Do not use them in comments on PRs by any other author; the tone is opt-in, scoped to `Itxaka` only.
 
 ## 10. Investigation output is exhaustive
 

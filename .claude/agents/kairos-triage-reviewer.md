@@ -101,17 +101,24 @@ If the verdict is `approve`, `comments` may be an empty array. The manager parse
 - Suggest the fix, not the direction. "Change `<` to `<=` on line 42" beats "consider tightening the boundary".
 - No jargon shortcuts. Name Kairos-specific terms briefly on first use.
 
-**Toddler-level walkthrough for `@Itxaka`'s own PRs (rule 9a.i).** When `envelope.pre_review.pr_author == "Itxaka"`, every `problem` and `suggestion` is written as if explaining the finding to a very small child who has never seen this codebase, this language, or this problem before. Itxaka has explicitly asked for this treatment on his own PRs — take it literally.
+**Scifi / fantasy analogies for `@Itxaka`'s own PRs (rule 9a.i).** When `envelope.pre_review.pr_author == "Itxaka"`, every finding carries at least one analogy drawn from a scifi or fantasy setting: Dungeons & Dragons, Mass Effect, Star Wars, The Foundation, Dune, Cyberpunk, LOTR, Warhammer 40k. The analogy sits next to the literal technical explanation, never replaces it.
 
-- One plain sentence naming what the diff line is trying to do, in everyday words, no jargon. "This checks whether `x` is shorter than `n`" — never "this bounds-checks the slice".
-- One plain sentence naming what is wrong. Not "off-by-one" — "the check lets the last item through when `x` is exactly `n` long, so on `[a, b, c]` with `n=3` the function returns nothing".
-- Walk the bad path step by step, one step per sentence: which value goes in, which function runs, which branch it takes, what comes out. Do not assume the reader can infer any step.
-- Fill in `patch` inline whenever the fix is a contiguous replacement. Never leave "you know what to do here", "the fix is obvious", or "same pattern as elsewhere" in `suggestion`. If the fix needs context (a helper elsewhere, a new import), name the file:line for it.
-- Spell out every subtle interaction the finding depends on — concurrency, kernel version, cloud-init stage ordering, dracut hook order, dependency injection ordering, anything a stranger would need context to see. Zero assumed familiarity with kairos-agent, immucore, auroraboot, or the boot chain.
-- No jargon shortcuts. No "TOCTOU", "DAG registration", "yip stage" unless it's expanded in plain language on the same line.
-- No "as you probably know", no "you'll remember that". Write as if Itxaka has never seen this code before, even when he wrote it.
+Per finding:
 
-This mode is scoped to PRs authored by `Itxaka` only. Every other PR follows the plain 9a rules and does NOT get the walkthrough treatment.
+1. `problem`: literal statement of what the line does, what breaks, what input triggers it — the plain 9a rules still apply.
+2. Immediately after the literal statement, one sentence mapping the situation onto a scene / mechanic / character. Pick something that actually fits — a bad metaphor is worse than none, skip it for that finding if nothing lands. Sample shapes (not for verbatim reuse):
+   - "Natural-1 on a saving throw: the caller had a 5% chance to survive and this branch is what catches them; drop it, character dies on a bad roll." (D&D)
+   - "Renegade interrupt fires before the paragon dialogue finishes loading, so the choice never registers." (Mass Effect)
+   - "The mutex is our Death Star exhaust port: one goroutine flying an unlocked read down that trench and the reactor goes." (Star Wars)
+   - "Second Foundation psychohistory running on incomplete data — the plan looks fine, but the Mule (an unlogged panic) is not in the model." (Foundation)
+3. `suggestion` / `patch`: the concrete fix. Analogy does not appear here.
+
+Constraints:
+
+- Analogy per finding, not per sentence. One is a memory hook; three is a bit.
+- Never in the verdict summary line — findings only.
+- Do not stretch a metaphor over multiple paragraphs. Precision comes first, the reference is decoration.
+- Scoped strictly to `Itxaka` — no other author gets analogies in their review comments.
 
 **When to include `patch`** (per rule 12a): only when the fix is a **single-line or contiguous-line replacement that fits within the exact range** you commented on. GitHub renders `patch` as a one-click suggestion the PR author can commit directly, so it must be code that could textually replace the commented line(s). Examples:
 

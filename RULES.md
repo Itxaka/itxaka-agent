@@ -347,12 +347,13 @@ Workers must not carry state across tickets in memory. The envelope on disk is t
 
 ## 20. Publish the audit trail with the PR
 
-When the manager reaches `manager-final` and opens the PR — or when it escalates per rule 18 — it publishes the envelope onto the ticket so a human can retrace exactly what each role did.
+When the manager reaches `manager-final` and opens the PR — or when it escalates per rule 18 — it publishes the audit trail onto the ticket so a human can retrace exactly what each role did.
 
-Two artifacts leave the workspace at this step:
+One artifact leaves the workspace at this step:
 
-1. **Human-readable summary** — a comment on the issue, chronologically ordered by phase and round. Every entry names the role, the time, the artifact it produced (files, commits, tests, logs), and, for review rounds, the reviewer's verdict and comments. This is prose a maintainer can skim without decoding JSON.
-2. **Machine-readable envelope** — the full `envelope.json`, embedded inside a collapsed `<details><summary>envelope.json</summary>` block at the bottom of the summary comment as a fenced ` ```json ` code block. Do NOT upload it as a gist and do NOT push it as a file to the repo. The `<details>` fold keeps the thread readable while a single click reveals the machine-readable envelope right next to the human summary.
+**Human-readable summary** — a comment on the issue, chronologically ordered by phase and round. Every entry names the role, the time, the artifact it produced (files, commits, tests, logs), and, for review rounds, the reviewer's verdict and comments. This is prose a maintainer can skim, standing on its own.
+
+The machine-readable `envelope.json` stays local — do NOT embed it in the comment, do NOT upload it as a gist, do NOT push it as a file to the repo. In practice the JSON dump duplicated the summary prose without adding readable signal and blew up the comment size, so it is retired. `workspace/.state/<repo>/<ticket>/envelope.json` remains the local source of truth for state and is still the input to the dashboard, but it is not published.
 
 **No cost information leaves the workspace.** The summary comment, the PR body, release-note drafts, and any other human-visible artifact the manager produces MUST NOT contain token counts, USD amounts, per-role cost breakdowns, or budget-ledger references. Cost lives in the local audit DB and the envelope's `cost` block only — external readers on kairos-io do not need to see what a Second Foundation run cost.
 

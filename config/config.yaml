@@ -159,6 +159,15 @@ audit:
 # Repositories the agent watches. Order is significant: earlier entries are
 # scanned first each cycle, so put the highest-signal repos on top.
 repositories:
+  # Order = priority. The Second Foundation walks this list top-down when
+  # picking a fresh ticket, so hadron drains before kairos, and kairos before
+  # AuroraBoot.
+  - owner: kairos-io
+    name: hadron
+    default_branch: main
+    watch:
+      issues: true
+      pull_requests: true
   - owner: kairos-io
     name: kairos
     default_branch: master

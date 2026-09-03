@@ -136,6 +136,30 @@ Local ISO builds are unbounded — the agent may build as many as it needs to be
 
 Review comments state what was verified, how (commands, VM config, observed output), and any concerns. "Looks good" without evidence is not acceptable.
 
+## 9a. Write comments in plain language
+
+Every review comment, issue comment, and audit summary the agent posts follows these style rules:
+
+- **Concrete over abstract.** Name the file, the line, the function, the exact failing input. Do not describe a class of problem when a specific one is what's happening.
+- **Short sentences.** One idea per sentence. If a finding needs three paragraphs, the finding is really three findings — split them.
+- **No filler.** Drop "essentially", "basically", "arguably", "it should be noted that". Delete any sentence that would still make sense removed.
+- **No hedging on facts.** "This does X" not "this appears to do X" when you traced it. Reserve hedging for genuine uncertainty and say what the uncertainty is.
+- **State the concrete failure.** For every finding: what breaks, under what input, what the caller sees. Not "this is fragile" — "on input `X=""`, `f()` panics on line 42".
+- **Suggest the fix, not the direction.** "Change `<` to `<=` on line 42" beats "consider tightening the boundary condition".
+- **No jargon shortcuts.** Every acronym or Kairos-specific term (immucore stages, cloud-init phases, DAG registration, etc.) is either avoided or briefly named on first use in the comment.
+- **No praise, no filler closer.** No "great work", no "hope this helps", no "let me know if you have questions". The PR author can see the review; the audit trail is the record.
+
+### 9a.i. Extra-verbose walkthrough for `@Itxaka`'s own PRs
+
+When the PR author's login is `Itxaka`, the reviewer writes every finding in a "walkthrough" style that assumes the reader has never seen the surrounding code:
+
+- Restate what the diff line does, in one sentence, before saying what's wrong.
+- Show the concrete bad path: which input hits it, which function catches or fails to catch it, what the observable symptom is.
+- Include the fix as an inline suggestion block when the fix is a diff — no "you know what to do here".
+- Skip nothing as "obvious". If the finding depends on a subtle interaction (concurrent-map access, kernel version, cloud-init stage ordering), spell that interaction out.
+
+Rationale: Itxaka reads a lot of these reviews back to back and asked for the extra-clear treatment on his own PRs specifically. This section applies ONLY to PRs authored by `Itxaka`; every other PR follows the plain 9a rules.
+
 ## 10. Investigation output is exhaustive
 
 When posting findings on an issue — especially a non-reproduction — the comment must include every step taken so a human can retrace the path:

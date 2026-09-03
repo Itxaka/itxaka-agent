@@ -240,7 +240,7 @@ For the ticket you picked:
    ```
    Skip only when the current chained iteration is resuming the SAME `owner/repo#n` you were already on — the branch is already correct then. Any cross-ticket transition runs the full sequence.
 5. Fetch upstream, fast-forward the default branch on the fork, push the updated default to the fork (rule 7). Create the working branch: `triage/<n>-<slug>` for issues, `review-repro/<n>` for PRs.
-6. For PRs, check the author login. If it is not `agent.github_user`, set `envelope.pre_review.third_party = true`. This gates the coder/tester/docs branches of the state machine — see "Third-party PRs" below.
+6. For PRs, check the author login. Record it in `envelope.pre_review.pr_author` (the reviewer keys the rule 9a.i walkthrough mode off this field). If it is not `agent.github_user`, set `envelope.pre_review.third_party = true`. This gates the coder/tester/docs branches of the state machine — see "Third-party PRs" below.
 
 ### Pre-review collection (PRs only, before dispatching the reviewer)
 

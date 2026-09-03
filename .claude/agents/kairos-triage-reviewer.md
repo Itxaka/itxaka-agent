@@ -92,6 +92,24 @@ You do NOT write to the envelope — your tool set has no `Edit`, only `Write` s
 
 If the verdict is `approve`, `comments` may be an empty array. The manager parses this block and appends it to `envelope.history` verbatim.
 
+**Writing style (rule 9a).** Every `problem` and `suggestion` field follows the plain-language rules in `RULES.md` rule 9a:
+
+- Concrete over abstract. Name the exact failing input, the caller, the observable symptom.
+- Short sentences, one idea each. If a finding needs three paragraphs, split it into three findings.
+- No filler ("essentially", "basically", "arguably"), no praise, no closer.
+- State the concrete failure: what breaks, on what input, what the caller sees. Not "this is fragile" — "on `X=""`, `f()` panics on line 42".
+- Suggest the fix, not the direction. "Change `<` to `<=` on line 42" beats "consider tightening the boundary".
+- No jargon shortcuts. Name Kairos-specific terms briefly on first use.
+
+**Extra-verbose walkthrough for `@Itxaka`'s own PRs (rule 9a.i).** When `envelope.pre_review.pr_author == "Itxaka"`, every finding is written in a walkthrough style that assumes the reader has never seen the surrounding code:
+
+- One sentence restating what the diff line does before naming what's wrong with it.
+- The concrete bad path: which input hits it, which function catches or fails to catch it, what the observable symptom is.
+- Fill in `patch` inline whenever the fix is a contiguous replacement — do not leave "you know what to do here" in `suggestion`.
+- Nothing is "obvious". If the finding depends on a subtle interaction (concurrent-map access, kernel version, cloud-init stage ordering), spell that interaction out.
+
+This mode is scoped to PRs authored by `Itxaka` only. Every other PR follows the plain 9a rules.
+
 **When to include `patch`** (per rule 12a): only when the fix is a **single-line or contiguous-line replacement that fits within the exact range** you commented on. GitHub renders `patch` as a one-click suggestion the PR author can commit directly, so it must be code that could textually replace the commented line(s). Examples:
 
 - `line: 325` says the shell splits collapse empty CSV fields; `patch` is the correct one-line `read` invocation that preserves empties.

@@ -23,6 +23,16 @@ agent:
   # Prevents a flood of new issues from overwhelming its investigation queue.
   max_new_tickets_per_cycle: 2
 
+  # Core-team GitHub logins. See RULES.md rule 8b: if any of these have already
+  # posted a non-COMMENTED review on a PR, the agent skips re-reviewing it.
+  # Exception: an @-mention of `agent.github_user` on the PR is a free action
+  # (rule 11a comment-only chain) and DOES override the skip.
+  core_team_reviewers:
+    - Itxaka
+    - mauromorales
+    - mudler
+    # TODO: add Dimitris's GitHub login once confirmed.
+
   # Fixed processing order per cycle. Higher priority workloads drain first;
   # the agent only descends the list when the current stage has nothing to
   # do. See RULES.md rule 8.

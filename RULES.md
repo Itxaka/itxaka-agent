@@ -111,6 +111,17 @@ Skip conditions — the manager does nothing this slot when none of the above ho
 
 Only after this queue drains does the manager fall through to rule 8's PR-review-then-issue-triage pipeline. In-flight envelopes still resume first per the existing rule; own-PR fixups create a fresh envelope scoped to the fixup work.
 
+## 8b. Skip PRs already reviewed by the core team
+
+If any GitHub user in `agent.core_team_reviewers` (currently the human maintainers of `kairos-io` — see the config for the exact list) has posted a review on the PR with `state` in `APPROVED` / `CHANGES_REQUESTED` / `DISMISSED`, the agent does NOT open a fresh review. The maintainers own the PR; the Second Foundation duplicating their work is noise. Bump `meta.last_seen.checked_at` and fall through to the next queue item as a zero-write iteration (rule 11a) — no envelope, no slot commitment, no comment.
+
+`state = COMMENTED` reviews do NOT trigger the skip: a comment-only review is a question or side-note, not an accept/reject verdict, so a fresh review is still useful.
+
+**Explicit `@`-mention override.** If a core-team member posts an issue or PR comment (or a comment inside their own review) that `@`-mentions `agent.github_user`, treat that as a direct request and act on it regardless of any existing core-team review. The response is a rule 11a comment-only free action — reply on the thread they mentioned us in, do the minimum work the mention asks for (usually a targeted answer, sometimes a fresh review scoped to what they asked), do NOT open a full round-0 review of the entire PR, do NOT self-assign, and do NOT commit the slot. The reply carries the rule 13 disclosure block.
+
+Detection: use `gh pr view <n> --json reviews,comments` and check
+`reviews[].author.login` against `core_team_reviewers` for the skip, and grep every comment / review body for `@<agent.github_user>` for the override. When both conditions match on the same PR, the override wins — the mention is why we are here.
+
 ## 9. A review is more than reading a diff
 
 To review a PR the agent must:

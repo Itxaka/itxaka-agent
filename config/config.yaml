@@ -28,10 +28,10 @@ agent:
   # Exception: an @-mention of `agent.github_user` on the PR is a free action
   # (rule 11a comment-only chain) and DOES override the skip.
   core_team_reviewers:
-    - Itxaka
-    - mauromorales
-    - mudler
-    # TODO: add Dimitris's GitHub login once confirmed.
+    - Itxaka         # Itxaka
+    - mauromorales   # Mauro Morales
+    - mudler         # Ettore Di Giacinto
+    - jimmykarily    # Dimitris Karakasilis
 
   # Fixed processing order per cycle. Higher priority workloads drain first;
   # the agent only descends the list when the current stage has nothing to

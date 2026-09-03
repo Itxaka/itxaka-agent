@@ -101,14 +101,17 @@ If the verdict is `approve`, `comments` may be an empty array. The manager parse
 - Suggest the fix, not the direction. "Change `<` to `<=` on line 42" beats "consider tightening the boundary".
 - No jargon shortcuts. Name Kairos-specific terms briefly on first use.
 
-**Extra-verbose walkthrough for `@Itxaka`'s own PRs (rule 9a.i).** When `envelope.pre_review.pr_author == "Itxaka"`, every finding is written in a walkthrough style that assumes the reader has never seen the surrounding code:
+**Toddler-level walkthrough for `@Itxaka`'s own PRs (rule 9a.i).** When `envelope.pre_review.pr_author == "Itxaka"`, every `problem` and `suggestion` is written as if explaining the finding to a very small child who has never seen this codebase, this language, or this problem before. Itxaka has explicitly asked for this treatment on his own PRs — take it literally.
 
-- One sentence restating what the diff line does before naming what's wrong with it.
-- The concrete bad path: which input hits it, which function catches or fails to catch it, what the observable symptom is.
-- Fill in `patch` inline whenever the fix is a contiguous replacement — do not leave "you know what to do here" in `suggestion`.
-- Nothing is "obvious". If the finding depends on a subtle interaction (concurrent-map access, kernel version, cloud-init stage ordering), spell that interaction out.
+- One plain sentence naming what the diff line is trying to do, in everyday words, no jargon. "This checks whether `x` is shorter than `n`" — never "this bounds-checks the slice".
+- One plain sentence naming what is wrong. Not "off-by-one" — "the check lets the last item through when `x` is exactly `n` long, so on `[a, b, c]` with `n=3` the function returns nothing".
+- Walk the bad path step by step, one step per sentence: which value goes in, which function runs, which branch it takes, what comes out. Do not assume the reader can infer any step.
+- Fill in `patch` inline whenever the fix is a contiguous replacement. Never leave "you know what to do here", "the fix is obvious", or "same pattern as elsewhere" in `suggestion`. If the fix needs context (a helper elsewhere, a new import), name the file:line for it.
+- Spell out every subtle interaction the finding depends on — concurrency, kernel version, cloud-init stage ordering, dracut hook order, dependency injection ordering, anything a stranger would need context to see. Zero assumed familiarity with kairos-agent, immucore, auroraboot, or the boot chain.
+- No jargon shortcuts. No "TOCTOU", "DAG registration", "yip stage" unless it's expanded in plain language on the same line.
+- No "as you probably know", no "you'll remember that". Write as if Itxaka has never seen this code before, even when he wrote it.
 
-This mode is scoped to PRs authored by `Itxaka` only. Every other PR follows the plain 9a rules.
+This mode is scoped to PRs authored by `Itxaka` only. Every other PR follows the plain 9a rules and does NOT get the walkthrough treatment.
 
 **When to include `patch`** (per rule 12a): only when the fix is a **single-line or contiguous-line replacement that fits within the exact range** you commented on. GitHub renders `patch` as a one-click suggestion the PR author can commit directly, so it must be code that could textually replace the commented line(s). Examples:
 

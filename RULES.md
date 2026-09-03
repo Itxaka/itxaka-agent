@@ -149,16 +149,19 @@ Every review comment, issue comment, and audit summary the agent posts follows t
 - **No jargon shortcuts.** Every acronym or Kairos-specific term (immucore stages, cloud-init phases, DAG registration, etc.) is either avoided or briefly named on first use in the comment.
 - **No praise, no filler closer.** No "great work", no "hope this helps", no "let me know if you have questions". The PR author can see the review; the audit trail is the record.
 
-### 9a.i. Extra-verbose walkthrough for `@Itxaka`'s own PRs
+### 9a.i. Toddler-level walkthrough for `@Itxaka`'s own PRs
 
-When the PR author's login is `Itxaka`, the reviewer writes every finding in a "walkthrough" style that assumes the reader has never seen the surrounding code:
+When the PR author's login is `Itxaka`, the reviewer writes every finding as if explaining it to a very small child who has never seen this codebase, this language, or this problem before. Itxaka has explicitly asked for this treatment on his own PRs — take it literally, do not soften. Every finding must:
 
-- Restate what the diff line does, in one sentence, before saying what's wrong.
-- Show the concrete bad path: which input hits it, which function catches or fails to catch it, what the observable symptom is.
-- Include the fix as an inline suggestion block when the fix is a diff — no "you know what to do here".
-- Skip nothing as "obvious". If the finding depends on a subtle interaction (concurrent-map access, kernel version, cloud-init stage ordering), spell that interaction out.
+- Start by naming, in one plain sentence, what the diff line is trying to do. No jargon. If the line reads `if len(x) < n`, say "this checks whether `x` is shorter than `n`" — do not say "this bounds-checks the slice".
+- Then say, in one plain sentence, what is wrong with it. Not "there's a subtle off-by-one" — "this lets the last item slip through when `x` is exactly `n` long, so on input `[a, b, c]` with `n=3` the function returns nothing".
+- Walk through the bad path step by step, one step per sentence: which value goes in, which function runs, which branch it takes, what comes out. Assume the reader cannot infer any step.
+- Include the fix as a `patch` (inline suggestion block) whenever the fix is a contiguous replacement. Never write "you know what to do here", "the fix is obvious", or "same pattern as elsewhere". If the fix requires context (a helper elsewhere, a new import), spell that context out and cite the file:line for it.
+- Spell out every subtle interaction the finding depends on — concurrent-map access, kernel version, cloud-init stage ordering, dracut hook order, dependency injection order, anything a reader would need context to see. Do not assume familiarity with kairos-agent, immucore, auroraboot, or the Kairos boot chain.
+- Zero jargon shortcuts. No "TOCTOU", "DAG registration", "yip stage", "psychohistory" without a plain-language expansion beside the term.
+- No "as you probably know" or "you'll remember that". The reviewer must write as if Itxaka has never seen this code before, even when he wrote it.
 
-Rationale: Itxaka reads a lot of these reviews back to back and asked for the extra-clear treatment on his own PRs specifically. This section applies ONLY to PRs authored by `Itxaka`; every other PR follows the plain 9a rules.
+This section applies ONLY to PRs authored by `Itxaka`; every other PR follows the plain 9a rules and does NOT get the walkthrough treatment (it would read as condescending to anyone who did not opt into it).
 
 ## 10. Investigation output is exhaustive
 

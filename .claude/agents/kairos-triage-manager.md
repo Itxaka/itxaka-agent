@@ -203,18 +203,21 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
    - Enumerate open issues on `kairos-io/kairos` matching `release_meta.detection` (label OR title regex).
    - Extract each meta's semver from its title. Query `gh api repos/kairos-io/kairos/git/refs/tags/<tag_prefix><version>` to see which tags already exist. Drop those.
    - Sort ascending. Take the lowest remaining. Parse its body and every comment through `release_meta.reference_patterns` to produce the priority reference set.
-4. Apply the pipeline (rule 8). Default order comes from `config.pipeline` (`review_prs` first, `triage_issues` second). Before applying it, check the anti-starvation quota `config.pipeline.reviews_per_issue_check` (default 5, 0 disables). Query the audit DB for the run of committed slots since the last issue commit:
+4. Apply the pipeline (rule 8). Default order comes from `config.pipeline` (`review_prs` first, `triage_issues` second). Before applying it, check the anti-starvation quota `config.pipeline.reviews_per_issue_check` (default 5, 0 disables).
+
+   **Data-quality prerequisite.** Every slot-committing pick MUST upsert a `tickets` row at commit time, populating `kind` (`'issue'` or `'pr'`) from what the manager fetched off GitHub for that ticket. Without this, the JOIN below drops the slot and the quota under-counts. If a legacy slot row exists with no matching `tickets` row, treat it as `kind='pr'` (safe default: reviews are what starve issues), NOT as unknown-and-skip.
    ```sql
    SELECT COUNT(*) FROM slots s
-     JOIN tickets t ON t.ticket_ref = s.ticket_ref
-    WHERE s.outcome IN ('done','awaiting-author','escalated')
+     LEFT JOIN tickets t ON t.ticket_ref = s.ticket_ref
+    WHERE s.outcome = 'finished'
+      AND s.ticket_ref IS NOT NULL
       AND s.ended_at > COALESCE(
         (SELECT MAX(s2.ended_at) FROM slots s2
            JOIN tickets t2 ON t2.ticket_ref = s2.ticket_ref
-          WHERE s2.outcome IN ('done','awaiting-author','escalated')
+          WHERE s2.outcome = 'finished'
             AND t2.kind = 'issue'),
         '1970-01-01T00:00:00Z')
-      AND t.kind = 'pr';
+      AND COALESCE(t.kind, 'pr') = 'pr';
    ```
    If the count is `>= reviews_per_issue_check`, invert the pipeline order for this slot (`triage_issues` first, `review_prs` second) so an issue is picked whenever one qualifies. When the quota flips the order, log `pipeline_flipped_by_quota=<count>` in the slot's audit event stream. If no issue qualifies after the flip, fall back to `review_prs` this slot — never idle just to preserve the flip.
 5. Inside each stage, drain the priority set first, then fall back to everything else.

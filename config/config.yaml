@@ -40,6 +40,14 @@ agent:
     - review_prs
     - triage_issues
 
+  # Quota that keeps the review queue from starving issue-driven work.
+  # Every `reviews_per_issue_check` consecutive slot commits on PRs, the
+  # next fresh-pick slot flips the pipeline order and tries `triage_issues`
+  # first. The counter resets whenever a slot commits on an issue. See
+  # RULES.md rule 8c and manager step 4.
+  # 0 disables the quota (original behaviour).
+  reviews_per_issue_check: 5
+
   # (No label configured — rule 12 uses self-assignment as the sole
   # visibility signal. See RULES.md.)
 

@@ -184,12 +184,32 @@ a:hover{text-decoration:underline}
 #tab-slots:checked     ~ .tabbar label[for=tab-slots],
 #tab-tickets:checked   ~ .tabbar label[for=tab-tickets],
 #tab-costs:checked     ~ .tabbar label[for=tab-costs],
-#tab-artifacts:checked ~ .tabbar label[for=tab-artifacts]{
+#tab-artifacts:checked ~ .tabbar label[for=tab-artifacts],
+#tab-graphs:checked    ~ .tabbar label[for=tab-graphs]{
   color:var(--fg);background:var(--tab-active);border-color:var(--line)}
 #tab-slots:checked     ~ #panel-slots,
 #tab-tickets:checked   ~ #panel-tickets,
 #tab-costs:checked     ~ #panel-costs,
-#tab-artifacts:checked ~ #panel-artifacts{display:block}
+#tab-artifacts:checked ~ #panel-artifacts,
+#tab-graphs:checked    ~ #panel-graphs{display:block}
+
+/* Graphs panel: 2-column grid of chart cards. */
+.chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px}
+.chart-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.chart-card h3{margin:0 0 8px;font-size:14px;font-weight:600;color:var(--fg)}
+.chart-card .sub{color:var(--muted);font-size:11px;margin-bottom:10px}
+.chart-card svg{width:100%;height:auto;display:block;font:11px system-ui,sans-serif}
+.chart-card svg text{fill:var(--fg)}
+.chart-card svg .axis{stroke:var(--line);stroke-width:1}
+.chart-card svg .gridline{stroke:var(--line);stroke-width:1;stroke-dasharray:2 3;opacity:.5}
+.chart-card svg .muted{fill:var(--muted)}
+.chart-card svg .bar{fill:#4f8bff}
+.chart-card svg .bar-2{fill:#2ecc71}
+.chart-card svg .bar-3{fill:#e67e22}
+.chart-card svg .bar-4{fill:#9b59b6}
+.chart-card svg .bar-5{fill:#e74c3c}
+.chart-card svg .line{stroke:#4f8bff;stroke-width:2;fill:none}
+.chart-card svg .area{fill:#4f8bff;fill-opacity:.15}
 
 /* Artifacts filter/pagination controls. */
 .artctl{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
@@ -231,11 +251,13 @@ cat <<'TABS_OPEN'
   <input type="radio" name="tab" id="tab-tickets">
   <input type="radio" name="tab" id="tab-artifacts">
   <input type="radio" name="tab" id="tab-costs">
+  <input type="radio" name="tab" id="tab-graphs">
   <div class="tabbar">
     <label for="tab-slots">Slots</label>
     <label for="tab-tickets">Tickets</label>
     <label for="tab-artifacts">Artifacts</label>
     <label for="tab-costs">Costs</label>
+    <label for="tab-graphs">Graphs</label>
   </div>
 TABS_OPEN
 
@@ -480,6 +502,198 @@ else
 fi
 echo '</section>'
 echo '</div>' # /panel-artifacts
+
+# ============================================================================
+# Graphs panel
+# ============================================================================
+echo '<div class="panel" id="panel-graphs">'
+echo '<section><h2>Graphs</h2><div class="chart-grid">'
+
+python3 - "$DB" <<'PYCHARTS'
+import sqlite3, sys, html
+from collections import OrderedDict
+
+db = sqlite3.connect(sys.argv[1])
+db.row_factory = sqlite3.Row
+
+# ---- helpers ---------------------------------------------------------------
+
+def esc(s):
+    return html.escape(str(s), quote=True)
+
+def bar_chart(title, sub, data, color_cls="bar"):
+    """data: list of (label, value)."""
+    if not data:
+        card(title, sub, '<div class="muted" style="padding:20px 0">no data yet</div>')
+        return
+    W, H = 480, 220
+    PAD_L, PAD_R, PAD_T, PAD_B = 40, 12, 12, 46
+    plot_w = W - PAD_L - PAD_R
+    plot_h = H - PAD_T - PAD_B
+    n = len(data)
+    max_v = max(v for _, v in data) or 1
+    bw = plot_w / n * 0.72
+    gap = plot_w / n
+    bars, xlabels, gridlines, ylabels = [], [], [], []
+    # y gridlines at 0, 25, 50, 75, 100 %
+    for i in range(5):
+        y = PAD_T + plot_h - plot_h * i / 4
+        gridlines.append(f'<line class="gridline" x1="{PAD_L}" y1="{y:.1f}" x2="{W-PAD_R}" y2="{y:.1f}"/>')
+        val = max_v * i / 4
+        label = f'{val:.0f}' if val >= 10 or val == int(val) else f'{val:.1f}'
+        ylabels.append(f'<text x="{PAD_L-4}" y="{y+3:.1f}" text-anchor="end" class="muted">{esc(label)}</text>')
+    for i, (label, v) in enumerate(data):
+        h = plot_h * (v / max_v) if max_v else 0
+        x = PAD_L + i * gap + (gap - bw) / 2
+        y = PAD_T + plot_h - h
+        bars.append(f'<rect class="{color_cls}" x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{h:.1f}"><title>{esc(label)}: {esc(v)}</title></rect>')
+        tx = x + bw / 2
+        ty = PAD_T + plot_h + 14
+        # rotate labels if crowded
+        if n > 8:
+            xlabels.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="end" transform="rotate(-40 {tx:.1f} {ty:.1f})">{esc(label)}</text>')
+        else:
+            xlabels.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle">{esc(label)}</text>')
+    axis = f'<line class="axis" x1="{PAD_L}" y1="{PAD_T+plot_h}" x2="{W-PAD_R}" y2="{PAD_T+plot_h}"/>'
+    svg = (f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet">'
+           + ''.join(gridlines) + axis + ''.join(bars)
+           + ''.join(ylabels) + ''.join(xlabels) + '</svg>')
+    card(title, sub, svg)
+
+def donut(title, sub, data):
+    """data: list of (label, value, css_class)."""
+    if not data or sum(v for _, v, _ in data) == 0:
+        card(title, sub, '<div class="muted" style="padding:20px 0">no data yet</div>')
+        return
+    W, H, R, TH = 480, 220, 70, 22
+    cx, cy = 120, H/2
+    total = sum(v for _, v, _ in data)
+    import math
+    circ = 2 * math.pi * R
+    segs, legend = [], []
+    offset = 0
+    for label, v, cls in data:
+        frac = v / total
+        length = circ * frac
+        segs.append(
+            f'<circle cx="{cx}" cy="{cy}" r="{R}" fill="none" class="{cls}" stroke="currentColor" '
+            f'stroke-width="{TH}" stroke-dasharray="{length:.2f} {circ-length:.2f}" '
+            f'stroke-dashoffset="{-offset:.2f}" transform="rotate(-90 {cx} {cy})"><title>{esc(label)}: {esc(v)} ({frac*100:.1f}%)</title></circle>'
+        )
+        offset += length
+    for i, (label, v, cls) in enumerate(data):
+        ly = 30 + i * 22
+        segs.append(f'<rect x="230" y="{ly-10}" width="14" height="14" class="{cls}" fill="currentColor"/>')
+        segs.append(f'<text x="252" y="{ly+2}">{esc(label)} — {esc(v)}</text>')
+    # centre total
+    segs.append(f'<text x="{cx}" y="{cy-4}" text-anchor="middle" style="font-size:22px;font-weight:600">{total}</text>')
+    segs.append(f'<text x="{cx}" y="{cy+14}" text-anchor="middle" class="muted">total</text>')
+    svg = f'<svg viewBox="0 0 {W} {H}">{"".join(segs)}</svg>'
+    card(title, sub, svg)
+
+def area_line(title, sub, data, y_fmt=lambda v: f'{v:.2f}'):
+    """data: list of (x_label, cumulative_value). Draws area+line."""
+    if len(data) < 2:
+        card(title, sub, '<div class="muted" style="padding:20px 0">need at least 2 points</div>')
+        return
+    W, H = 480, 220
+    PAD_L, PAD_R, PAD_T, PAD_B = 48, 12, 12, 40
+    plot_w = W - PAD_L - PAD_R
+    plot_h = H - PAD_T - PAD_B
+    n = len(data)
+    max_v = max(v for _, v in data) or 1
+    pts = []
+    for i, (_, v) in enumerate(data):
+        x = PAD_L + i * (plot_w / (n - 1))
+        y = PAD_T + plot_h - plot_h * (v / max_v)
+        pts.append((x, y))
+    line = 'M ' + ' L '.join(f'{x:.1f},{y:.1f}' for x, y in pts)
+    area_path = line + f' L {pts[-1][0]:.1f},{PAD_T+plot_h} L {pts[0][0]:.1f},{PAD_T+plot_h} Z'
+    gridlines, ylabels = [], []
+    for i in range(5):
+        y = PAD_T + plot_h - plot_h * i / 4
+        gridlines.append(f'<line class="gridline" x1="{PAD_L}" y1="{y:.1f}" x2="{W-PAD_R}" y2="{y:.1f}"/>')
+        ylabels.append(f'<text x="{PAD_L-4}" y="{y+3:.1f}" text-anchor="end" class="muted">{esc(y_fmt(max_v*i/4))}</text>')
+    xlabels = []
+    step = max(1, n // 6)
+    for i in range(0, n, step):
+        x = PAD_L + i * (plot_w / (n - 1))
+        xlabels.append(f'<text x="{x:.1f}" y="{H-PAD_B+18}" text-anchor="middle">{esc(data[i][0])}</text>')
+    axis = f'<line class="axis" x1="{PAD_L}" y1="{PAD_T+plot_h}" x2="{W-PAD_R}" y2="{PAD_T+plot_h}"/>'
+    svg = (f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet">'
+           + ''.join(gridlines) + axis
+           + f'<path class="area" d="{area_path}"/>'
+           + f'<path class="line" d="{line}"/>'
+           + ''.join(ylabels) + ''.join(xlabels) + '</svg>')
+    card(title, sub, svg)
+
+def card(title, sub, body):
+    sub_html = f'<div class="sub">{esc(sub)}</div>' if sub else ''
+    print(f'<div class="chart-card"><h3>{esc(title)}</h3>{sub_html}{body}</div>')
+
+# ---- data + charts ---------------------------------------------------------
+
+# Slots per day (last 14 days)
+rows = db.execute("""
+    SELECT DATE(started_at) AS d, COUNT(*) AS n
+      FROM slots WHERE started_at IS NOT NULL
+     GROUP BY d ORDER BY d DESC LIMIT 14
+""").fetchall()
+rows.reverse()
+bar_chart("Slots per day", "last 14 days with activity",
+          [(r["d"][5:], r["n"]) for r in rows])
+
+# Slot outcome breakdown (donut)
+rows = db.execute("""
+    SELECT COALESCE(outcome,'idle') AS o, COUNT(*) AS n
+      FROM slots GROUP BY o ORDER BY n DESC
+""").fetchall()
+cls_map = {"done":"bar-2","awaiting-author":"bar-3","escalated":"bar-5",
+           "idle":"muted","in-flight":"bar-4","error":"bar-5","finished":"bar"}
+donut("Slot outcomes", "all-time",
+      [(r["o"], r["n"], cls_map.get(r["o"], "bar")) for r in rows])
+
+# Verdict breakdown (bar)
+rows = db.execute("""
+    SELECT verdict, COUNT(*) AS n FROM verdicts
+     GROUP BY verdict ORDER BY n DESC
+""").fetchall()
+bar_chart("Review verdicts", "verdicts posted by the reviewer",
+          [(r["verdict"], r["n"]) for r in rows], color_cls="bar-2")
+
+# Ticket kind mix (donut)
+rows = db.execute("""
+    SELECT kind, COUNT(*) AS n FROM tickets GROUP BY kind
+""").fetchall()
+donut("Ticket kind", "issues vs PRs picked up",
+      [(r["kind"], r["n"], "bar" if r["kind"]=="pr" else "bar-3") for r in rows])
+
+# Cumulative USD spend (area)
+rows = db.execute("""
+    SELECT DATE(ts) AS d, SUM(usd) AS u
+      FROM costs WHERE ts IS NOT NULL
+     GROUP BY d ORDER BY d
+""").fetchall()
+cum, running = [], 0.0
+for r in rows:
+    running += (r["u"] or 0.0)
+    cum.append((r["d"][5:], running))
+area_line("Cumulative USD spend", "running total across all slots", cum,
+          y_fmt=lambda v: f'${v:.0f}' if v >= 10 else f'${v:.2f}')
+
+# Tokens by role (bar)
+rows = db.execute("""
+    SELECT role, SUM(tokens) AS t FROM costs
+     WHERE role IS NOT NULL GROUP BY role ORDER BY t DESC
+""").fetchall()
+bar_chart("Tokens by role", "sum of tokens consumed per subagent role",
+          [(r["role"], r["t"] or 0) for r in rows], color_cls="bar-4")
+
+db.close()
+PYCHARTS
+
+echo '</div></section>'
+echo '</div>' # /panel-graphs
 
 echo '</div>' # /.tabs
 

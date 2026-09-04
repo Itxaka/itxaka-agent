@@ -98,6 +98,10 @@ Each cycle the agent processes work in this fixed order:
 
 Reviews are the higher-priority workload because a stalled PR blocks a real contributor.
 
+## 8c. Anti-starvation quota for issue triage
+
+Fresh incoming PRs are cheap and constant (Renovate, ci-robbot), so the fixed rule 8 order (PRs first) can drain issue triage to zero — the agent ends up reviewing forever and never opening its own PR from an issue. To fix this, `config.pipeline.reviews_per_issue_check` (default 5) sets a quota. Every N consecutive slot commits on PRs, the next fresh-pick slot flips the pipeline order and tries `triage_issues` first. The counter resets whenever a slot commits on an issue. Set to 0 to disable and restore the original strict PR-first behaviour. Own-PR fixups and dormant zero-write iterations (rule 11a) do not count toward the quota — only slot-committing picks against fresh tickets do.
+
 ## 8a. Own open PRs are top priority
 
 Any pull request the Second Foundation opened and has not yet seen merged or closed is checked at the start of every slot, ahead of the rule 8 pipeline. The check is cheap — one `gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open --json number,url,mergeable,reviewDecision,statusCheckRollup` per watched repo — and the manager only ACTS on a PR when at least one of these is true:

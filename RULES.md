@@ -153,7 +153,17 @@ Every review comment, issue comment, and audit summary the agent posts follows t
 - **No jargon shortcuts.** Every acronym or Kairos-specific term (immucore stages, cloud-init phases, DAG registration, etc.) is either avoided or briefly named on first use in the comment.
 - **No praise, no filler closer.** No "great work", no "hope this helps", no "let me know if you have questions". The PR author can see the review; the audit trail is the record.
 
-### 9a.i. Scifi / fantasy analogies for `@Itxaka`'s own PRs
+## 9b. Empirical claims about toolchain behaviour go through the builder
+
+Any review finding that rests on how a compiler, linker, language runtime or build tool behaves at build time — "the Go toolchain adds `X:…` to the version string", "clang emits an `__asan_init` call", "musl-gcc drops unused symbols under `--gc-sections`" — must be verified empirically before it is published. The reviewer is read-only and cannot compile anything; the way it flags a finding as still-unverified is `needs_build_verification: true` on that finding in its verdict. The manager, on receiving the verdict, dispatches the `kairos-triage-builder` subagent (see `.claude/agents/kairos-triage-builder.md`) with the exact claim, waits for its journal, and:
+
+- **Verdict `confirmed`:** the finding survives, and the builder's `one-line` is quoted into the review body next to the finding as evidence.
+- **Verdict `contradicted`:** the finding is dropped from the review before publication. The manager logs the retraction in the audit ledger; the PR author never sees the flawed finding.
+- **Verdict `inconclusive`:** the finding is either dropped or held for the next round with a note; never published as a live blocker on inconclusive evidence.
+
+The reviewer is expected to raise a builder request whenever a finding *would* need a build to prove. The rule exists because a review comment that says "the toolchain appends X" without ever having asked the toolchain is exactly the failure mode rule 2 forbids — and by the time an author replies with "I built it and there is no X" the review already looks wrong. Fewer confident-sounding wrong findings is more valuable than more findings.
+
+## 9a.i. Scifi / fantasy analogies for `@Itxaka`'s own PRs
 
 When the PR author's login is `Itxaka`, every finding in the review carries at least one analogy drawn from a scifi or fantasy setting Itxaka reads: Dungeons & Dragons, Mass Effect, Star Wars, The Foundation, Dune, Cyberpunk, LOTR, Warhammer 40k. The analogy sits alongside the technical explanation, never replaces it — the code path, the failing input, the fix must all be named literally too.
 

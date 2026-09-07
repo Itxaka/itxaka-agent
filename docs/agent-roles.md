@@ -46,6 +46,17 @@ The reviewer's tool set is read-only on purpose (rule 22 independence, rule 17 w
 - **Outputs:** short paragraph plus a JSON verdict block; no on-disk writes.
 - **Never:** edits files, mutates the envelope, calls the GitHub API. The reviewer says what is wrong; the coder/tester/docs fix it; the manager records it.
 
+### Builder
+
+Empirically verifies one toolchain-behaviour claim per invocation (rule 9b). When the reviewer wants to flag a finding whose truth depends on how a compiler, linker, language runtime or build tool actually behaves — "the Go toolchain adds `X:…` to the version string", "clang under `-fsanitize=address` emits `__asan_init`", "musl-gcc drops the `printf` symbol under `--gc-sections`" — it marks the finding `needs_build_verification: true` with a testable `build_claim`. The manager routes the claim to the builder before publishing the review.
+
+The builder writes a small program in a scratch directory, runs it, records commands and observed output verbatim, and reports one of three verdicts: `confirmed`, `contradicted`, or `inconclusive`. The manager keeps confirmed findings, drops contradicted ones (so the PR author never sees a wrong review), and defers inconclusive ones with a note.
+
+- **Inputs:** one `build_claim` sentence, an optional `context` block, envelope path, journal path, scratch directory.
+- **Outputs:** a Markdown journal ending with `verdict:` and `one-line:` lines.
+- **Never:** edits target-repo files, calls GitHub, builds the whole product to check a compile-time detail, opines on the wider PR.
+- **Wall-clock cap:** `roles.builder_wallclock_seconds` in `config.yaml` (default 900s). Beyond the cap the builder returns `inconclusive` — real toolchain rebuilds are not this role's job.
+
 ## Handoff envelope
 
 Every handoff carries this JSON envelope, persisted to `workspace/.state/<repo>/<ticket>/envelope.json`:

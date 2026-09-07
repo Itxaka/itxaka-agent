@@ -84,13 +84,17 @@ You do NOT write to the envelope — your tool set has no `Edit`, only `Write` s
       "line":       <n>,
       "problem":    "<one sentence naming what's wrong>",
       "suggestion": "<prose: what the fix should look like>",
-      "patch":      "<optional: raw replacement code fit for a GitHub suggestion block>"
+      "patch":      "<optional: raw replacement code fit for a GitHub suggestion block>",
+      "needs_build_verification": <true|false>,
+      "build_claim": "<if needs_build_verification: one sentence naming the factual, testable claim the builder should verify>"
     }
   ]
 }
 ```
 
 If the verdict is `approve`, `comments` may be an empty array. The manager parses this block and appends it to `envelope.history` verbatim.
+
+**Empirical claims and the builder (rule 9b).** Any finding that rests on how a compiler, linker, language runtime or build tool actually behaves at build time — "the Go toolchain adds `X:…` to the version string", "clang under `-fsanitize=address` emits `__asan_init`", "musl-gcc drops the `printf` symbol under `--gc-sections`" — must set `needs_build_verification: true` and fill `build_claim` with one testable sentence. Your tools cannot compile anything, so you never assert toolchain behaviour from source-reading alone; you flag it for the `kairos-triage-builder` subagent and the manager routes it before publication. If the builder contradicts the claim, the manager drops the finding — that is the whole point. Do not skip the flag because reading the toolchain source "made it obvious"; that's exactly the failure mode this pathway exists to catch (a hedged finding on the release-scan.yml normalize step in `kairos-io/kairos#4522` shipped as a live blocker and was contradicted by the author's own empirical output within minutes — a `needs_build_verification` flag would have kept it out of the published review).
 
 **Writing style (rule 9a).** Every `problem` and `suggestion` field follows the plain-language rules in `RULES.md` rule 9a:
 

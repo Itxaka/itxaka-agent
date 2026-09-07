@@ -293,9 +293,9 @@ Agents to spawn per phase:
 | `coding`    | `kairos-triage-coder`                  |
 | `testing`   | `kairos-triage-tester`                 |
 | `docs`      | `kairos-triage-docs`                   |
-| `reviewing` | `kairos-triage-reviewer`               |
+| `reviewing` | `kairos-triage-reviewer`, plus `kairos-triage-builder` per finding that carries `needs_build_verification: true` (rule 9b) |
 
-The coder, tester, and docs subagents update the envelope on disk and return a short summary. The reviewer does NOT write to the envelope — it returns a fenced JSON verdict block in its final text (see `.claude/agents/kairos-triage-reviewer.md`), and you append that block to `envelope.history` yourself. The reviewer's tool set is intentionally read-only.
+The coder, tester, and docs subagents update the envelope on disk and return a short summary. The reviewer does NOT write to the envelope — it returns a fenced JSON verdict block in its final text (see `.claude/agents/kairos-triage-reviewer.md`), and you append that block to `envelope.history` yourself. The reviewer's tool set is intentionally read-only. The builder is dispatched *after* the reviewer during the same `reviewing` phase, one call per flagged finding; each builder call writes its own journal under `journals/builder-round<N>-<slug>.md` and returns a `verdict:` line the manager uses to keep, drop, or defer the finding.
 
 **Cached-verdict short-circuit.** Before dispatching the reviewer for round `N`, check `envelope.history` for an entry whose `round == N`. If one exists — typically because a prior slot ran the reviewer in dry-run and the manager did not get to publish — skip the `Agent` call, log `reusing cached verdict from round N (skipped reviewer dispatch)`, and proceed to consume the verdict as if the reviewer had just returned. This keeps token cost off the second slot when the first slot already produced a valid verdict but did not post. `costs` still gets a zero-token row for the reviewer so the ledger reflects the reuse. The same rule applies for the coder / tester / docs on any round they already have artifacts committed for, though in practice only the reviewer benefits — those roles produce commits, not opinions, and re-running them is usually cheap or necessary.
 
@@ -311,6 +311,24 @@ On `reviewing`:
 - If `changes-requested` and `envelope.pre_review.third_party` is `false`, increment `round`, set `phase: coding`, and dispatch the coder again with the reviewer comments attached.
 - If `changes-requested` and `third_party` is `true`, do NOT loop — see "Third-party PRs" below.
 - If `round + 1 > roles.max_review_rounds`, set `phase: escalated` and go to escalation.
+
+**Builder-verification pass (rule 9b).** Before you act on the reviewer's verdict (posting, looping, or escalating), walk `comments[]` and collect every entry with `needs_build_verification: true` and a non-empty `build_claim`. For each such claim, dispatch `kairos-triage-builder` with:
+
+- `claim` — the `build_claim` string verbatim.
+- `context` — the finding's `file:line`, the PR head SHA, and any relevant toolchain hint from the diff.
+- `envelope_path` — the ticket envelope.
+- `journal_path` — a fresh path under `workspace/.state/<owner>_<repo>/<n>/journals/builder-round<N>-<slug>.md`.
+- `scratch_dir` — a fresh tmp directory under `workspace/.scratch/`.
+
+When the builder returns, its journal ends with a `verdict:` line. Apply it:
+
+- `verdict: confirmed` — the finding survives. Prepend the builder's `one-line:` string to the finding's `problem` field so the published comment quotes the empirical evidence, and add the journal path to `envelope.artifacts` with `kind='builder_journal'`.
+- `verdict: contradicted` — drop the finding from `comments[]` entirely before publication. Log the retraction in the audit ledger (`events` role=`manager` action=`finding_dropped`, note=`reason=builder-contradicted claim="<claim>" journal=<path>`), and add the journal to `envelope.artifacts`. Do NOT publish the finding.
+- `verdict: inconclusive` — drop the finding from `comments[]` for this round with an event-log note; if it materially blocks approval you may re-raise it next round with more context, but never publish an inconclusive builder finding as a live blocker.
+
+If dropping a finding leaves `comments[]` empty and the reviewer's `verdict` was `changes-requested`, promote the verdict to `approve` for this round (write the promotion into `envelope.history`, and log `events` action=`verdict_promoted`). This is the intended outcome when the sole blocker was a toolchain misread — the reviewer would have said `approve` if it had the builder's evidence at verdict time.
+
+Track builder cost the same way you track reviewer cost: read `subagent_tokens` from the Agent result, price it via `config/model-pricing.yaml` under the `builder` role (fall back to the reviewer's model price if `builder` is not listed), and add a row to `costs` and `worker_reports`. Builder runs are per-finding, not per-slot, so several may appear in one slot's `costs` view — that is expected.
 
 ### Third-party PRs
 

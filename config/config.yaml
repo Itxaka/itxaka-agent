@@ -118,6 +118,14 @@ roles:
   # Claude Code actually reads when spawning the subagent. See
   # docs/claude-code-integration.md.
 
+  # Wall-clock cap for one `kairos-triage-builder` invocation. The builder
+  # verifies one toolchain-behaviour claim per call (rule 9b); a real
+  # rebuild would eat a whole slot and starve the rest of the queue.
+  # Under this cap the builder writes an `inconclusive` journal and
+  # returns, so the manager can decide whether to drop or defer the
+  # finding rather than block.
+  builder_wallclock_seconds: 900
+
 # Global cost budget with a rolling window. See RULES.md rule 21. Per-ticket
 # caps are the wrong tool here — some tickets legitimately cost more than
 # others — so the budget aggregates across every role and every ticket.

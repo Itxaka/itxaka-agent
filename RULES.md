@@ -75,19 +75,31 @@ Before creating a working branch the agent:
 
 No branching from stale local state. No branching from feature branches. No committing to `main` directly.
 
-## 7a. Reset the clone to a clean slate at the start of every ticket
+## 7a. Per-slot worktree — never share a checkout across managers
 
-Before ANY read or write against `workspace/<repo>/` — pre-review checkout, coder dispatch, tester dispatch, fixup rebase, or any inspection that reads working-tree files — the manager brings the clone to a known-clean state:
+`workspace/<repo>/` is the shared **object store**, not a working tree. Every slot works in its own worktree at `workspace/<repo>-slot<slot_seq>/`, created at slot start and torn down at slot end. Two managers hitting overlapping tickets can no longer stomp each other's `HEAD` or dirty state because they don't share a checkout in the first place.
 
-1. `git -C workspace/<repo> fetch --prune upstream` and `git -C workspace/<repo> fetch --prune origin`.
-2. `git -C workspace/<repo> reset --hard HEAD` — drop any working-tree modifications and staged changes.
-3. `git -C workspace/<repo> clean -fdx` — remove untracked files and directories (build output, IDE noise, half-finished repro scripts from an earlier slot).
-4. `git -C workspace/<repo> checkout <default_branch>` and fast-forward to `upstream/<default_branch>` per rule 7.
-5. Only then check out or create the working branch for the current ticket.
+At slot start (or the first chained iteration inside a slot):
 
-Rationale: the Second Foundation is not concurrent, but successive slots reuse the same clone. Leaving `HEAD` on the previous slot's branch (a `review-repro/<n>` from another ticket, a `triage/<n>-<slug>` mid-rebase) is what caused the round-1 review of #4452 to start on the wrong branch and required a mid-slot correction. Reset is cheap; incorrect starting state produces incorrect diffs, incorrect `pre_review`, and, if the miss is not caught, incorrect verdicts.
+1. `git -C workspace/<repo> fetch --prune upstream` and `git -C workspace/<repo> fetch --prune origin` — refresh the shared object store. No `reset --hard`, no `clean -fdx`, no `checkout` on the shared clone itself; another slot may already have branches checked out on it.
+2. `git -C workspace/<repo> worktree add workspace/<repo>-slot<slot_seq> upstream/<default_branch>` — the slot's private checkout. All subsequent reads, writes, `git push`, and worker dispatches use this path.
+3. Record the path in `envelope.meta.worktree` so the audit trail can name what was actually built.
+4. At slot end (`outcome=finished` or `outcome=error`), `git -C workspace/<repo> worktree remove --force workspace/<repo>-slot<slot_seq>` — leaving stale worktrees behind is fine for one or two slots but drifts into disk-space rot over a week.
 
-Exception: if the current slot is resuming its OWN committing ticket from the previous iteration in the same manager invocation (chained per rule 11a on the SAME `owner/repo#n`), the reset is not required — the branch is already correct and clean. Any cross-ticket transition, and every fresh manager invocation, runs the full reset.
+Chained iterations inside one slot (rule 11a) reuse the same worktree — check it exists before recreating. Cross-ticket transitions inside one slot re-run steps 2's `reset --hard upstream/<default_branch>` + `clean -fdx` **on the worktree, not the shared clone**.
+
+Rationale: successive slots used to reuse one clone. When a slot ran past the 15-min cron tick (slot 80: 95 min), the next tick fired a second manager that read `HEAD` off a branch the first manager had just checked out. That is what corrupted slot 87's round-0 tester dispatch and produced the `meta.concurrency_incident` on kairos-io/kairos#149. The worktree split kills that entire class — two managers on different tickets see zero contention, and two managers on the *same* ticket at least fight over identifiable per-ticket state (fold-on-read events, per-ticket `gh.lock`) instead of silently stomping one shared checkout.
+
+## 7b. Audit DB runs in WAL mode
+
+`workspace/.state/audit.sqlite` is opened in WAL journal mode. This is the corresponding change on the DB side of the concurrency split: many writers can commit rows overlappingly without one blocking the other on the file lock, and readers do not block writers. The pragma persists on the DB file, so setting it once is enough — but the manager still runs it at every slot start as an idempotent guard against a fresh clone silently regressing to `delete` mode:
+
+```
+sqlite3 workspace/.state/audit.sqlite \
+  "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;" >/dev/null
+```
+
+Every multi-statement write from the manager wraps in a short `BEGIN IMMEDIATE`/`COMMIT` transaction. Long-lived write transactions are the way to get `SQLITE_BUSY` under overlap even with WAL on.
 
 ## 8. PR review comes before issue triage
 

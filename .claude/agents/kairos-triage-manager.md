@@ -244,17 +244,28 @@ For the ticket you picked:
    The body states what you are about to do (review, or investigate and reproduce).
 2. Self-assign **for issues only**: `gh issue edit <n> --add-assignee <agent.github_user>`. **Do NOT self-assign on any PR** — reviewers belong in `reviewRequests`/`reviews`, not `assignees`, and self-assigning as reviewer confuses maintainer tooling. Rule 12 spells this out. Do NOT create or apply repository labels, and do NOT update GitHub Project (v2) status columns.
 3. Create the envelope at `workspace/.state/<owner>_<repo>/<n>/envelope.json` with the schema from `docs/agent-roles.md`. Set `phase: coding` for issues, `phase: reviewing` for PRs.
-4. Ensure the fork clone exists at `workspace/<repo>/`. If not, `gh repo fork` (if the fork does not exist upstream on the agent account) and `git clone https://github.com/<fork_owner>/<repo>.git workspace/<repo>`. Add upstream: `git remote add upstream https://github.com/<owner>/<repo>.git`.
-4a. **Clean-slate reset (rule 7a).** Before checking anything out on the clone, bring it to a known-clean state — do this every time you enter a new ticket, and every fresh manager invocation, without exception:
+4. Ensure the fork clone exists at `workspace/<repo>/`. If not, `gh repo fork` (if the fork does not exist upstream on the agent account) and `git clone https://github.com/<fork_owner>/<repo>.git workspace/<repo>`. Add upstream: `git remote add upstream https://github.com/<owner>/<repo>.git`. This clone is the shared **object store**; nothing checks branches out on it directly any more (see 4b).
+4a. **Clean-slate reset (rule 7a).** Refresh the shared object store — cheap, no working-tree churn:
    ```
    git -C workspace/<repo> fetch --prune upstream
    git -C workspace/<repo> fetch --prune origin
-   git -C workspace/<repo> reset --hard HEAD
-   git -C workspace/<repo> clean -fdx
-   git -C workspace/<repo> checkout <default_branch>
-   git -C workspace/<repo> reset --hard upstream/<default_branch>
    ```
-   Skip only when the current chained iteration is resuming the SAME `owner/repo#n` you were already on — the branch is already correct then. Any cross-ticket transition runs the full sequence.
+   Do NOT `reset --hard` / `clean -fdx` / `checkout` on `workspace/<repo>` itself: the slot works on a private worktree (4b), and another slot may already have branches checked out on it. The shared clone stays on the default branch, untouched.
+4b. **Per-slot git worktree.** Every slot works in an isolated checkout so two managers running against overlapping tickets do not stomp each other's branch state. Create it at slot start (or reuse it across chained iterations within the same slot):
+   ```
+   WT=workspace/<repo>-slot<slot_seq>
+   git -C workspace/<repo> worktree add --detach "$WT" upstream/<default_branch> \
+     || git -C workspace/<repo> worktree add "$WT" upstream/<default_branch>
+   git -C "$WT" reset --hard upstream/<default_branch>
+   git -C "$WT" clean -fdx
+   ```
+   All subsequent `git`, `docker build`, test runs, and `git push origin <branch>` in this slot use `$WT`, not `workspace/<repo>`. Record the path in `envelope.meta.worktree` so the audit trail can point at what was actually built. At slot end (`outcome=finished` or `outcome=error`), tear the worktree down: `git -C workspace/<repo> worktree remove --force "$WT"`. Chained iterations inside one slot reuse the same worktree — check it exists before recreating.
+4c. **Audit DB in WAL mode.** At slot startup, ensure `workspace/.state/audit.sqlite` is in WAL journal mode so two slots can commit rows simultaneously without one blocking the other on the file lock. Idempotent:
+   ```
+   sqlite3 workspace/.state/audit.sqlite \
+     "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;" >/dev/null
+   ```
+   The pragma is persistent on the DB file, so this is a no-op on every slot after the first, but running it every time keeps a fresh clone from silently regressing to `delete` mode. Never write to the DB via `sqlite3` without opening a short `BEGIN IMMEDIATE`/`COMMIT` around multi-statement writes — that is how you get `SQLITE_BUSY` under concurrency.
 5. Fetch upstream, fast-forward the default branch on the fork, push the updated default to the fork (rule 7). Create the working branch: `triage/<n>-<slug>` for issues, `review-repro/<n>` for PRs.
 6. For PRs, check the author login. Record it in `envelope.pre_review.pr_author` (the reviewer keys the rule 9a.i walkthrough mode off this field). If it is not `agent.github_user`, set `envelope.pre_review.third_party = true`. This gates the coder/tester/docs branches of the state machine — see "Third-party PRs" below.
 

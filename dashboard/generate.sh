@@ -100,7 +100,7 @@ section() {
 # values; the sentinels rehydrate injects are safe because none of them
 # contain a `/` `#` `N` triplet.
 linkify() {
-  sed -E 's!(^|[[:space:]>])([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)#([0-9]+)([[:space:]<]|$)!\1<a href="https://github.com/\2/\3/issues/\4">\2/\3#\4</a>\5!g'
+  sed -E 's!(^|[[:space:]>])([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)#([0-9]+)([[:space:]<]|$)!\1<a href="https://github.com/\2/\3/issues/\4" target="_blank" rel="noopener noreferrer">\2/\3#\4</a>\5!g'
 }
 
 # The single sed pass that turns sentinels back into HTML. Kept here so every

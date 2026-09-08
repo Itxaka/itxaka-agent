@@ -66,14 +66,18 @@
     logs from `journalctl -u kairos-agent` or the immucore emergency shell.
   labels_add: [needs-info]
 
-# Feature requests: not our scope.
-- name: skip-features
+# Fallback: any other unassigned issue without a skip label — take over.
+# Order matters: `bug`-labeled tickets already matched `investigate-boot-bugs`
+# above (or `request-repro-info` when a repro is missing), so this catches
+# `enhancement`, `documentation`, `chore`, `papercut`, `good first issue`,
+# `help wanted`, and everything else the manager's rule 8c priority walk
+# reaches after the bug queue drains. `reproduce_in_qemu` is off — most of
+# these are not runtime bugs — but the coder/tester loop still runs.
+- name: investigate-any-issue
   match:
-    labels_any: [enhancement, feature-request]
-  action: skip
-
-# Documentation issues: leave to humans for now.
-- name: skip-docs
-  match:
-    labels_any: [documentation]
-  action: skip
+    is_pull_request: false
+    assignee_state: unassigned
+    labels_none: [needs-info, blocked]
+  action: investigate
+  investigate:
+    reproduce_in_qemu: false

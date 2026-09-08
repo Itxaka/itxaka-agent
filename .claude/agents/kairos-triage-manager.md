@@ -220,7 +220,7 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
       AND COALESCE(t.kind, 'pr') = 'pr';
    ```
    If the count is `>= reviews_per_issue_check`, invert the pipeline order for this slot (`triage_issues` first, `review_prs` second) so an issue is picked whenever one qualifies. When the quota flips the order, log `pipeline_flipped_by_quota=<count>` in the slot's audit event stream. If no issue qualifies after the flip, fall back to `review_prs` this slot — never idle just to preserve the flip.
-5. Inside each stage, drain the priority set first, then fall back to everything else.
+5. Inside each stage, drain the priority set first, then fall back to everything else. **`triage_issues` label priority (rule 8c):** (a) release-meta priority set, (b) unassigned issues carrying `bug` (oldest first), (c) every other unassigned issue regardless of label (oldest first). Rung (c) only fires when (a) and (b) are empty; `rules.yaml` skip labels still gate every rung. A pure-discussion `epic`, a stalled `spike`, or anything with no concrete deliverable is walked past like a skip-labelled ticket (log the reason, move on) — the anti-starvation quota does not force a pick, it only reorders the stages.
 6. Inside each candidate, apply `config/rules.yaml`:
    - Skip anything assigned to a human that is not `agent.github_user` (rule 5). Self-assignment carve-out: if the assignee set is exactly `[<ticket_author>]`, treat the ticket as unassigned. If any assignee is neither the agent nor the author, skip.
    - Skip anything already labelled with rules-listed skip labels.

@@ -102,6 +102,14 @@ Reviews are the higher-priority workload because a stalled PR blocks a real cont
 
 Fresh incoming PRs are cheap and constant (Renovate, ci-robbot), so the fixed rule 8 order (PRs first) can drain issue triage to zero — the agent ends up reviewing forever and never opening its own PR from an issue. To fix this, `config.pipeline.reviews_per_issue_check` (default 5) sets a quota. Every N consecutive slot commits on PRs, the next fresh-pick slot flips the pipeline order and tries `triage_issues` first. The counter resets whenever a slot commits on an issue. Set to 0 to disable and restore the original strict PR-first behaviour. Own-PR fixups and dormant zero-write iterations (rule 11a) do not count toward the quota — only slot-committing picks against fresh tickets do.
 
+**Label priority within `triage_issues`.** The stage is not scoped to `bug`. It walks the whole open-issue queue on `kairos-io/kairos` in this order and takes the first ticket that passes `config/rules.yaml`:
+
+1. Release-meta priority set (rule 16) — anything the next-release meta references, regardless of label.
+2. `bug`-labeled unassigned issues, oldest first — the historical scope, still the highest-value non-meta work.
+3. Everything else unassigned — `enhancement`, `documentation`, `chore`, `papercut`, `good first issue`, `help wanted`, `governance`, `spike`, unlabeled — oldest first. Skip labels in `rules.yaml` (`do-not-triage`, `needs-design`, `discussion`, `RFC`, `needs-info`, `blocked`) still apply and take priority over the walk.
+
+Rung 3 only fires when rungs 1 and 2 are empty. A bug the agent could take is never skipped in favour of an enhancement. Within rung 3 the manager still gates on whether it can meaningfully act — a pure-discussion `epic` with no concrete deliverable, or a stalled `spike`, is walked past like a skip-labelled ticket (log the reason, move on). The action for a rung-3 pick is the normal issue flow: post a takeover comment, self-assign, spawn the coder/tester loop; the QEMU reproduction sub-flow only applies when `rules.yaml` sets `reproduce_in_qemu: true`, which the catch-all rule does not.
+
 ## 8a. Own open PRs are top priority
 
 Any pull request the Second Foundation opened and has not yet seen merged or closed is checked at the start of every slot, ahead of the rule 8 pipeline. The check is cheap — one `gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open --json number,url,mergeable,reviewDecision,statusCheckRollup` per watched repo — and the manager only ACTS on a PR when at least one of these is true:

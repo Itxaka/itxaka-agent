@@ -92,18 +92,32 @@ section() {
   echo "</section>"
 }
 
+# Wrap every `owner/repo#N` occurrence in an <a> pointing at
+# github.com/owner/repo/issues/N. GitHub redirects /issues/N to /pull/N
+# when N is a PR, so one link shape works for both. Anchoring on the
+# character immediately before/after the ref (whitespace, `>`, `<`, or
+# line boundary) avoids matching inside existing hrefs or attribute
+# values; the sentinels rehydrate injects are safe because none of them
+# contain a `/` `#` `N` triplet.
+linkify() {
+  sed -E 's!(^|[[:space:]>])([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)#([0-9]+)([[:space:]<]|$)!\1<a href="https://github.com/\2/\3/issues/\4">\2/\3#\4</a>\5!g'
+}
+
 # The single sed pass that turns sentinels back into HTML. Kept here so every
 # emitter routes through the same escaping.
 rehydrate() {
   sed -E \
     -e 's|%PILL:([a-z0-9_-]+):([^%]*)%|<span class="pill \1">\2</span>|g' \
     -e 's|%MUTED:([^%]*)%|<span class="muted">\1</span>|g' \
-    -e 's|%SLOT:([0-9]+):([^%]+)%|<span class="pill mono" title="\2">#\1</span>|g'
+    -e 's|%SLOT:([0-9]+):([^%]+)%|<span class="pill mono" title="\2">#\1</span>|g' \
+  | linkify
 }
 
 # Escape HTML for inline text values (used inside <pre> for journal previews).
+# Runs the linkify pass afterwards so `owner/repo#N` mentions inside prose
+# also render as clickable links.
 htmlescape() {
-  python3 -c 'import html,sys;sys.stdout.write(html.escape(sys.stdin.read()))'
+  python3 -c 'import html,sys;sys.stdout.write(html.escape(sys.stdin.read()))' | linkify
 }
 
 # --- write output ------------------------------------------------------------

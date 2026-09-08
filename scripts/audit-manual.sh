@@ -4,6 +4,12 @@
 # in the audit DB, so the dashboard's cost/tokens/artifacts totals include
 # work done outside the manager's slot loop.
 #
+# DO NOT use this to backfill a manager slot — the manager records its own
+# costs into `costs` / `artifacts` per role at slot close. Only use this for
+# work dispatched directly from the main conversation (a `kairos-expert` /
+# `hadron-build-master` / generic subagent that produced a PR, a review
+# comment, or a commit, without going through `kairos-triage-run`).
+#
 # Usage:
 #   scripts/audit-manual.sh <ticket_ref> <role> <tokens> <artifact_kind> <artifact_ref> [note]
 #

@@ -29,6 +29,29 @@ Kairos is an OS. Most bugs surface at boot, install, upgrade, or reset. Whenever
 
 Reference workflows already available in this environment: `driving-qemu-vms`, `testing-immucore-with-qemu`, `testing-kairos-installer-with-hadron`.
 
+## 3a. High-risk fixes require post-fix QEMU verification with screenshots
+
+Rule 3 covers reproduction *before* the fix. This rule covers verification *after* the fix. When a change qualifies as **high-risk**, the fix is not considered complete — and the PR is not opened — until the fixed build has been booted under QEMU and the outcome has been captured as screenshots that live on the PR.
+
+A change is high-risk when it touches any of:
+
+- Boot flow: initramfs, dracut modules, systemd-boot / GRUB / UKI, kernel cmdline handling.
+- Install, upgrade, or reset code paths in `kairos-agent`.
+- Disk partitioning, `kcrypt`, LUKS, or TPM sealing.
+- `immucore` mount tables, overlay wiring, or the immutable rootfs layout.
+- Anything whose failure mode is "the machine will not boot" or "the machine boots but loses persistent state".
+
+The reviewer flags a PR as high-risk when picking it up; the coder inherits the flag from the envelope. Any doubt resolves to high-risk.
+
+Verification steps for a high-risk change:
+
+1. After phase 2 of rule 15 (fix committed, tests green), build a fresh ISO from the working branch with `auroraboot`.
+2. Boot the ISO under QEMU per the reference workflows (`driving-qemu-vms`, `testing-immucore-with-qemu`, `testing-kairos-installer-with-hadron`).
+3. Capture screendumps at the decisive stages: the GRUB / boot-menu screen, the initramfs / dracut stage where the bug used to surface, the kairos-agent stage, and the login prompt (or the exact expected error if the change deliberately preserves a failure). Golden path first; then the edge case the ticket named.
+4. Upload the screendumps to the PR — as image attachments in a dedicated comment titled `QEMU verification` — before requesting review. When the ticket the PR closes lives in a different issue, cross-post the same comment there (rule 4a).
+
+When QEMU verification is genuinely infeasible — the code path only runs on an architecture the runner cannot emulate, on a physical TPM whose sealing keys are tied to real hardware, or on a cloud-only bootloader path — the coder states that explicitly in the same `QEMU verification` comment (with the reason), and the reviewer decides whether the change can still ship. Absence of the comment is treated as "verification was skipped without justification" and the reviewer rejects the PR.
+
 ## 4. Keep the issue updated
 
 Every state change on an issue the agent is handling produces a comment on that issue:
@@ -322,6 +345,8 @@ Fixes for reported bugs follow a fixed three-phase workflow, one commit per phas
 The three commits stay separate on the working branch so the PR history is self-documenting. If a maintainer asks for a squash, that happens at merge time on their side, not on the agent's branch.
 
 When a bug is not testable in code (hardware-specific, requires human interaction, external service state) the agent falls back to rule 3 — QEMU reproduction and an exhaustive comment — and does not open a PR.
+
+When the fix qualifies as high-risk under rule 3a, phases 2 and 3 chain into the QEMU verification step before the PR is opened. The three-commit history stays intact; the `QEMU verification` comment is posted alongside the PR, not inside its commit trailers.
 
 ## 16. Release-meta tickets set the priority queue
 

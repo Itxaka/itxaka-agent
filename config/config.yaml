@@ -199,6 +199,13 @@ repositories:
       # Issue triage stays scoped to the kairos repo per user direction.
       issues: false
       pull_requests: true
+  - owner: kairos-io
+    name: provider-kubernetes
+    default_branch: master
+    watch:
+      # PR reviews only; issue triage stays scoped to kairos-io/kairos.
+      issues: false
+      pull_requests: true
 
 # GitHub authentication.
 #

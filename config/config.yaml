@@ -201,7 +201,7 @@ repositories:
       pull_requests: true
   - owner: kairos-io
     name: provider-kubernetes
-    default_branch: master
+    default_branch: main
     watch:
       # PR reviews only; issue triage stays scoped to kairos-io/kairos.
       issues: false

@@ -388,6 +388,19 @@ The only acceptable test-free PRs are:
 
 If a change is technically testable but the agent cannot see how to test it, that is a signal to stop and hand the ticket back, not to open the PR without tests.
 
+## 14a. Attach a screenshot of the manual test run
+
+When the agent runs the test suite manually — `go test`, `npm test`, `pytest`, `cargo test`, `make test`, etc. — a screenshot of the terminal showing the final output (test summary line, PASS/FAIL counts, timings) MUST be attached to the PR in a `test run` comment (or the same `QEMU verification` comment when both apply). This proves the tests were actually executed and all were green, not just that CI is presumed to pass later.
+
+Requirements:
+
+- The screenshot shows the last N lines of the terminal ending with the suite's summary line (e.g. `ok  ./... 12.4s`, `Tests: 42 passed`, `PASSED in 3.1s`).
+- If the terminal history scrolled past the start of the run, include a second screenshot of the initial `go test ./...` / `npm test` command invocation so it is clear what was run.
+- Host the screenshot on `itxaka-agent/triage-assets` under `<owner>/<n>/tests-<stage>.<ext>` and embed with a `raw.githubusercontent.com` URL (same conventions as rule 3a).
+- Terminal text logs pasted as fenced code blocks are not a substitute — the screenshot is the artifact humans trust. Both may appear together; the screenshot is the required one.
+
+CI-only runs (no local invocation) do not need a screenshot; the CI check itself is the artifact. This rule applies specifically to test suites the agent kicked off locally.
+
 ## 15. Bug-fix workflow: test first, fix, flip
 
 Fixes for reported bugs follow a fixed three-phase workflow, one commit per phase, in this order:

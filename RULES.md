@@ -72,6 +72,17 @@ Label availability today: `QA: pass` / `QA: fail` exist on `kairos-io/kairos` an
 
 The `QA: pass` / `QA: fail` labels only go on tickets **originated by someone else** that the agent fully reviewed and QEMU-verified. Never apply either label to a PR or issue the triage agent itself opened — self-verification is not a trustworthy signal for outside reviewers, and stamping our own PR with `QA: pass` looks like a rubber stamp. For our own PRs, record the QEMU outcome only in the `QEMU verification` comment and let a human reviewer add the label if they want the cache entry.
 
+### 3b.ii. QA label requires third-party-verifiable proof
+
+A `QA: pass` or `QA: fail` label MUST NOT be applied unless the same PR/issue also carries a public artifact a third party can inspect to confirm the run happened and its result. Acceptable proof, any of:
+
+- Screenshots hosted on `itxaka-agent/triage-assets` (QEMU stages per rule 3a, or terminal test-run output per rule 14a), embedded in a `QEMU verification` or `test run` comment.
+- The full test-run log pasted as a fenced code block in the same comment, ending on the suite's summary line (PASS/FAIL counts, `ok ./...`, timings).
+- A link to a CI run in the target repo whose logs are publicly readable and whose conclusion matches the label.
+- A link to an equivalent public artifact (Grafana snapshot, S3-hosted log, GitHub Actions artifact URL) — anything reachable without agent credentials.
+
+"I tested it locally" text with no artifact is not proof. If no such artifact exists, do not label — record the outcome in the comment only and skip the label. The label is a cache entry other people rely on; it must never outrun the evidence.
+
 ## 3c. Check for a stated owner before taking a ticket
 
 Before opening a takeover comment on any issue or PR, the agent MUST read the comment thread and check whether a human or another agent has already stated they are working on it. If the most recent claim is unresolved — the author has not said they are done, and no PR closing the issue has merged — treat the ticket as `assigned_to_other` under rule 5 and skip it, even when the GitHub `assignees` field is empty.

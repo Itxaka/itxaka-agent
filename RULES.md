@@ -406,6 +406,7 @@ When the agent runs the test suite manually — `go test`, `npm test`, `pytest`,
 Requirements:
 
 - The screenshot shows the last N lines of the terminal ending with the suite's summary line (e.g. `ok  ./... 12.4s`, `Tests: 42 passed`, `PASSED in 3.1s`).
+- The screenshot MUST also include, on the same terminal capture, the commit sha the tests were run against (`git rev-parse HEAD` output) and the run date/time (`date -Iseconds` output). Preface the test command with these two lines so the screenshot proves *which* code was tested and *when* — a passing summary from an unknown sha or from weeks ago is not evidence.
 - If the terminal history scrolled past the start of the run, include a second screenshot of the initial `go test ./...` / `npm test` command invocation so it is clear what was run.
 - Host the screenshot on `itxaka-agent/triage-assets` under `<owner>/<n>/tests-<stage>.<ext>` and embed with a `raw.githubusercontent.com` URL (same conventions as rule 3a).
 - Terminal text logs pasted as fenced code blocks are not a substitute — the screenshot is the artifact humans trust. Both may appear together; the screenshot is the required one.

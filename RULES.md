@@ -68,6 +68,10 @@ The labels come off automatically the moment the head SHA changes (Renovate reba
 
 Label availability today: `QA: pass` / `QA: fail` exist on `kairos-io/kairos` and `kairos-io/hadron`. When the target repo does not have them yet, the agent MUST NOT try to create them (write permission on labels is not guaranteed); instead post the outcome as a "QA: pass" / "QA: fail" line inside the `QEMU verification` comment and note the missing label in the audit summary so the operator can add it.
 
+### 3b.i. Never label our own tickets
+
+The `QA: pass` / `QA: fail` labels only go on tickets **originated by someone else** that the agent fully reviewed and QEMU-verified. Never apply either label to a PR or issue the triage agent itself opened — self-verification is not a trustworthy signal for outside reviewers, and stamping our own PR with `QA: pass` looks like a rubber stamp. For our own PRs, record the QEMU outcome only in the `QEMU verification` comment and let a human reviewer add the label if they want the cache entry.
+
 ## 3c. Check for a stated owner before taking a ticket
 
 Before opening a takeover comment on any issue or PR, the agent MUST read the comment thread and check whether a human or another agent has already stated they are working on it. If the most recent claim is unresolved — the author has not said they are done, and no PR closing the issue has merged — treat the ticket as `assigned_to_other` under rule 5 and skip it, even when the GitHub `assignees` field is empty.

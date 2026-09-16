@@ -224,6 +224,30 @@ Every review comment, issue comment, and audit summary the agent posts follows t
 - **No jargon shortcuts.** Every acronym or Kairos-specific term (immucore stages, cloud-init phases, DAG registration, etc.) is either avoided or briefly named on first use in the comment.
 - **No praise, no filler closer.** No "great work", no "hope this helps", no "let me know if you have questions". The PR author can see the review; the audit trail is the record.
 
+## 9a.ii. No agent internals in public comments
+
+Nothing about how the agent runs belongs in a ticket, PR, or audit-trail comment on GitHub. Only ticket-substance is public.
+
+Never mention: slot IDs or slot numbers, `entry_reason`, scheduler cadence, cron ticks, per-slot budget, `roles.concurrency`, `checked_at` bookkeeping, escalation queue mechanics, anti-starvation quotas, worker seats, cost figures in USD or tokens, subagent IDs, `phase` names beyond what a maintainer needs to understand next steps.
+
+If a fact belongs in the audit DB or the local envelope, it stays there. If the maintainer needs to know that a review round happened, the round number is enough — no "slot 193 committed to this ticket, seq X, cost Y" scaffolding.
+
+## 9a.iii. Concise comments; get to the point
+
+Every GitHub-visible comment stops the moment the substance is delivered. Nothing after that adds value.
+
+Baselines by comment kind:
+
+- **Takeover comment**: one sentence — what you are picking up, what you will do next.
+- **Review summary comment after inline diff comments are already posted**: one to two sentences — the verdict (`approve` / `changes-requested`) and the count of findings. Do NOT restate the findings; they are already on the diff.
+- **Audit-trail summary comment**: the round number, verdict, and a link to the review. Not the full history of every round.
+- **Progress update (rule 4)**: one to three sentences — what changed since the last update, what happens next.
+- **Escalation note**: the concrete reason (7-day dormancy, unresolved blocker, etc.) and what a maintainer should do. Not the pipeline reasoning that got you there.
+
+The one comment kind where length is warranted is the `QEMU verification` comment under rule 3a — reviewers actually read that end to end because it is the test evidence. Even there, trim: what was booted, what was asserted, what the screenshot shows, blob SHAs. Skip the multi-paragraph tour of the boot sequence.
+
+If a comment has bulleted "Key files touched" or "Files changed" sections, those belong in the audit DB, not the comment. If a comment quotes back the reviewer's own findings after those findings are already on the diff, delete that section. If a paragraph describes what the agent was thinking about doing before it did the thing, delete that paragraph.
+
 ## 9b. Empirical claims about toolchain behaviour go through the builder
 
 Any review finding that rests on how a compiler, linker, language runtime or build tool behaves at build time — "the Go toolchain adds `X:…` to the version string", "clang emits an `__asan_init` call", "musl-gcc drops unused symbols under `--gc-sections`" — must be verified empirically before it is published. The reviewer is read-only and cannot compile anything; the way it flags a finding as still-unverified is `needs_build_verification: true` on that finding in its verdict. The manager, on receiving the verdict, dispatches the `kairos-triage-builder` subagent (see `.claude/agents/kairos-triage-builder.md`) with the exact claim, waits for its journal, and:

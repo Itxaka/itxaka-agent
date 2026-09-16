@@ -52,6 +52,34 @@ Verification steps for a high-risk change:
 
 When QEMU verification is genuinely infeasible — the code path only runs on an architecture the runner cannot emulate, on a physical TPM whose sealing keys are tied to real hardware, or on a cloud-only bootloader path — the coder states that explicitly in the same `QEMU verification` comment (with the reason), and the reviewer decides whether the change can still ship. Absence of the comment is treated as "verification was skipped without justification" and the reviewer rejects the PR.
 
+## 3b. QEMU-verification label as a cache
+
+After a QEMU end-to-end run finishes, the agent labels the ticket to record the outcome so no other run — human or agent — re-does the same work:
+
+- **`QA: pass`** — every planned QEMU step succeeded, all assertions held, screenshots posted.
+- **`QA: fail`** — at least one QEMU step failed, or a boot regression surfaced. The failure is documented in the same `QEMU verification` comment.
+
+Both labels are honored as terminal for that head SHA. Before starting a fresh QEMU run for a ticket, the agent MUST check the current label set. If `QA: pass` or `QA: fail` is already present:
+
+- If the label was applied to the current head SHA (agent's own last audit-DB entry, or an explicit "verified at &lt;sha&gt;" note in the `QEMU verification` comment), skip re-testing. Use the recorded outcome.
+- If the head has moved since the label was applied, remove the stale label and re-verify.
+
+The labels come off automatically the moment the head SHA changes (Renovate rebase, author force-push, maintainer merge-base bump), so a stale label is a bug, not the norm.
+
+Label availability today: `QA: pass` / `QA: fail` exist on `kairos-io/kairos` and `kairos-io/hadron`. When the target repo does not have them yet, the agent MUST NOT try to create them (write permission on labels is not guaranteed); instead post the outcome as a "QA: pass" / "QA: fail" line inside the `QEMU verification` comment and note the missing label in the audit summary so the operator can add it.
+
+## 3c. Check for a stated owner before taking a ticket
+
+Before opening a takeover comment on any issue or PR, the agent MUST read the comment thread and check whether a human or another agent has already stated they are working on it. If the most recent claim is unresolved — the author has not said they are done, and no PR closing the issue has merged — treat the ticket as `assigned_to_other` under rule 5 and skip it, even when the GitHub `assignees` field is empty.
+
+Claim markers to look for (case-insensitive substring match on the last N comments, N=20):
+
+- "I'm on this", "I'll take this", "on it", "picking this up", "assigning to myself", "wip on my end".
+- "I'm working on this now", "already fixing this locally", "have a branch for this".
+- Another triage agent's takeover disclosure block ("Automated triage agent … running as `@…`").
+
+If a claim is present but the claimant has gone silent past the same 7-day dormancy threshold rule 12b applies to `awaiting-author` PRs, the agent MAY treat the claim as stale, post a "checking on this" comment cc'ing the claimant, and proceed if there is no response inside one working day.
+
 ## 4. Keep the issue updated
 
 Every state change on an issue the agent is handling produces a comment on that issue:

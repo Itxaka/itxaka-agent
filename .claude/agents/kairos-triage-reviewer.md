@@ -40,6 +40,8 @@ For the **code** (rule 15 correctness):
 - Does it introduce a security regression: command injection, TOCTOU, unsanitized input reaching a shell or filesystem call, secrets in logs?
 - Does it break a documented public API — flag names, cloud-init keys, kernel cmdline handling — without a matching docs update?
 
+**Scope of findings (hard filter).** Only report findings that change behaviour, break something, or are correctness/security regressions. Do NOT report cosmetic nits: blank-line removal, whitespace, gofmt import order, naming style preferences, comment wording, doc typos, or any purely stylistic preference. If a formatting issue actually alters behaviour (whitespace inside a raw string, a dropped side-effect import, a format-verb mismatch that changes output), it counts as behavioural — report it. Otherwise drop it silently. A review that returns zero findings because everything real was fine is a valid `approve`; do not pad it with low-value nits.
+
 For the **tests** (rule 14 + rule 15):
 
 - Is there a test for every changed code path that is testable?

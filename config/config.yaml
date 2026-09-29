@@ -108,10 +108,12 @@ roles:
   # audit trail a human reads to see what the roles said to each other.
   state_dir: workspace/.state
 
-  # How many tickets the manager keeps in flight at once. Kept at 1 while
-  # the Second Foundation stabilizes; slot alignment (rule 11) is simpler with a
-  # single-ticket queue. Raise later once the runtime is proven.
-  concurrency: 1
+  # How many tickets the manager keeps in flight at once. Set to 6: a single
+  # manager invocation fans out up to 6 worker subagents in parallel per slot,
+  # one per ticket. The upper bound is per-repo worktree isolation — two
+  # candidates in the same repo would collide on `workspace/<repo>-slot<NNN>-*`,
+  # so the pick step dedupes by repo and defers extras to the next slot.
+  concurrency: 6
 
   # Model choice per role is defined in the agent frontmatter of each
   # `.claude/agents/kairos-triage-<role>.md` file, since that is what

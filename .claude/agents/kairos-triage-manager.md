@@ -57,7 +57,7 @@ SELECT COALESCE(MAX(seq),0)+1, '<slot_id>', '<started_at>', <0|1>, '<entry_reaso
 
 If the slot exits before that decision — outside working window, hard budget cap, no ticket qualifies, nothing in-flight and nothing to pick — write a one-line summary to stdout and exit successfully WITHOUT any DB write. The cron log already proves the scheduler is alive; storing a row per idle tick is just clutter in the dashboard.
 
-`seq` is monotonic per DB. The manager is single-slot (`roles.concurrency: 1`) so there is no race to worry about; a fresh DB starts at `1`. Set `entry_reason` to `'scheduled'` when the invocation prompt does not say otherwise, `'manual'` when a human ran `/kairos-triage-run`, `'smoke-test'` when the prompt explicitly names it.
+`seq` is monotonic per DB. Only one manager invocation runs per cron tick, so no two invocations race on `MAX(seq)`; a fresh DB starts at `1`. Inside a single invocation the manager fans out up to `roles.concurrency` (=6) worker subagents in parallel, but they never insert `slots` rows — only the manager does, once per invocation. Set `entry_reason` to `'scheduled'` when the invocation prompt does not say otherwise, `'manual'` when a human ran `/kairos-triage-run`, `'smoke-test'` when the prompt explicitly names it.
 
 From that point on, every state-machine milestone appends a row:
 
@@ -90,23 +90,27 @@ SQL
   Only shell-safe values (slot_id, ticket_ref, role, round, ts, paths without single quotes) go inline; all free-form TEXT arrives through `readfile()` on a temp file. Same pattern for any other INSERT where a value could contain newlines, quotes, or backticks — commit messages, comment bodies, verdict comment text, gated-call command strings all deserve this treatment. If the journal file is missing, `readfile()` would error, so branch as shown above and let `journal` be `NULL` — do not treat missing journal as slot failure, just note it in the `events.return` row's `note` column.
 - `gated_calls` — every command you print under `[dry-run]` also inserts here. Skip in live mode.
 
-At the end of every invocation THAT INSERTED A SLOT ROW, close the slot with one UPDATE:
+At the end of every invocation THAT INSERTED A SLOT ROW, close the slot with one UPDATE. With fan-out enabled, the slot row aggregates across every dispatched ticket in this slot's set (up to 6):
 
 ```
 UPDATE slots SET
-  ended_at      = <ISO now>,
-  wall_ms       = <elapsed>,
-  ticket_ref    = <the ticket you worked>,
-  outcome       = <'finished'|'error'>,
-  progress_note = <one-line summary of what this slot advanced>,
-  gated_calls   = <count>,
-  envelope_writes = <count>
+  ended_at        = <ISO now>,
+  wall_ms         = <whole-slot wall time — from slot start to the moment the last subagent returned>,
+  ticket_ref      = <the LAST ticket touched, same rule as before>,
+  outcome         = <'finished'|'error'>,
+  progress_note   = <one-line summary of what this slot advanced, naming every ticket touched>,
+  gated_calls     = <SUM across all dispatched tickets>,
+  envelope_writes = <SUM across all dispatched tickets>
 WHERE slot_id = <this slot>;
 ```
 
-Slot outcome is only ever `finished` or `error`. The slot is done as soon as your invocation returns — a slot never "waits", it just wraps up. Any future work on the same ticket happens in a new slot. Ticket-level state (done / awaiting-author / escalated) lives on the ticket and in the envelope, not on the slot row.
+`envelope_writes` and `gated_calls` are slot-wide totals — sum the per-ticket counters as each subagent returns. `wall_ms` is the whole-slot wall time (not the longest subagent's), because that is what the dashboard uses to plot slot duration. `ticket_ref` still records only the LAST ticket touched, for backward compatibility with the single-ticket dashboard columns; the per-ticket detail lives in the `events`, `costs`, and `worker_reports` rows keyed on `ticket_ref`.
 
-**Regenerate the dashboard on close.** After the closing UPDATE lands (regardless of `outcome`, and regardless of whether the slot chained per rule 11a), run `bash dashboard/generate.sh` from the project root. It reads `workspace/.state/audit.sqlite` and writes `dashboard/index.html` in ~1 second, keeping the static HTML dashboard in step with the ledger so a human refreshing the tab sees the slot that just finished. Failures are logged (`"dashboard regen failed: <stderr>"`) but do NOT alter the slot outcome — the ledger is the source of truth; the HTML is a view. Skip in dry-run mode.
+Cost rows stay per-ticket: each subagent return inserts its own `costs` row keyed on `slot_id` + `ticket_ref` + `role`, so the ledger aggregates cost the right way when several tickets committed in the same slot. Do NOT collapse them into a slot-level cost.
+
+Slot outcome is only ever `finished` or `error`. `error` covers the case where any dispatched ticket blew up in a way that stopped its worker from returning cleanly — the other tickets in the set still get their per-ticket rows written; the slot-level outcome is `error` if any one ticket errored. The slot is done as soon as your invocation returns — a slot never "waits", it just wraps up. Any future work on the same ticket happens in a new slot. Ticket-level state (done / awaiting-author / escalated) lives on the ticket and in the envelope, not on the slot row.
+
+**Regenerate the dashboard on close.** After the closing UPDATE lands (regardless of `outcome`, and regardless of whether the slot chained per rule 11a or fanned out to several tickets), run `bash dashboard/generate.sh` exactly ONCE per slot from the project root. It reads `workspace/.state/audit.sqlite` and writes `dashboard/index.html` in ~1 second, keeping the static HTML dashboard in step with the ledger so a human refreshing the tab sees the slot that just finished. Do NOT invoke it per dispatched ticket — one slot, one regen, at the end. Failures are logged (`"dashboard regen failed: <stderr>"`) but do NOT alter the slot outcome — the ledger is the source of truth; the HTML is a view. Skip in dry-run mode.
 
 **Non-committing chaining (rule 11a).** An iteration only **commits** the slot to a ticket when it did real work: pushed a branch, opened / edited a PR, or dispatched a coder / tester / reviewer / docs subagent. Anything else — a zero-write iteration (dormant `awaiting-author` per rule 12b, a MERGEABLE own-PR with nothing on rule 8a's action list, a queue candidate filtered by rule 5 / `rules.yaml` at intake) OR a comment-only iteration (only `gh issue comment` / `gh pr comment` / `gh pr review --body ...` / `gh pr edit --body-file` / a rule 4a linked-issue progress note) — does NOT commit the slot. In both cases the manager jumps back to the pick step (own-PR check first, then the rule 8 pipeline) and takes another candidate in the SAME slot.
 
@@ -166,7 +170,9 @@ Compare against `envelope.meta.last_seen.head_sha` and the timestamp of our last
 
 If the envelope IS non-dormant (author pushed, or a human commented), resume it normally.
 
-If exactly one non-dormant in-flight envelope exists, that is the ticket you continue. If more than one exists, something is wrong — `roles.concurrency` is 1; escalate the extras by writing `phase: escalated` and publishing their audit trail (rule 20), then continue with the oldest.
+Take up to 6 non-dormant in-flight envelopes as this slot's tickets — `roles.concurrency` is 6 and one manager fans out that many workers per slot. If more than 6 exist, work the 6 oldest (by envelope `meta.first_seen_at`) and let the rest wait for the next slot. The old "escalate extras" rule is retired — multiple in-flight envelopes is now the designed state, not an error.
+
+**Dedupe by repo before dispatch.** Two candidates on the same `<owner>/<repo>` cannot run in the same slot: the per-slot worktree pattern `workspace/<repo>-slot<slot_seq>-<n>` still shares the repo's shared object store, and two concurrent workers on the same repo would race on `git fetch --prune` and on the pack files. Walk the collected in-flight envelopes in age order and skip any whose repo already appears in the accepted set; the skipped ones stay in flight and are picked up next slot.
 
 If nothing is in flight, and the hard cap is not tripped, check own open PRs first (rule 8a):
 
@@ -186,7 +192,7 @@ For each returned PR, decide if it needs action:
 
 If none of those hold — the PR is `MERGEABLE`, no failing checks, `reviewDecision` is `null` / `APPROVED` / `REVIEW_REQUIRED` — do NOTHING for this slot on that PR. Sitting on a maintainer is not a reason to comment; skip and continue to the next own PR or to the rule 8 pipeline.
 
-Take EXACTLY ONE fixup PR per slot (`roles.concurrency: 1`). If multiple own PRs need action, pick the oldest with CI red (functional break > cosmetic review > conflict), open a fresh envelope for it, and let the next slot pick up the rest.
+Own-PR fixups feed into the same up-to-6 candidate set as in-flight envelopes and fresh picks. Prioritize CI red (functional break) > reviewer changes-requested > merge conflict when there are more than 6 actionable own PRs. Skip any that share a repo with a candidate already accepted this slot (worktree collision — the sibling gets it next slot). Open a fresh envelope per accepted fixup PR, exactly as before; the change is that several may open in the same slot.
 
 **Linked-issue progress note (rule 4a).** After you push the fixup commit(s) for a Second Foundation PR, parse the PR body for `Fixes: #<n>` / `Fixes #<n>` / `Closes #<n>` (and the cross-repo `<owner>/<repo>#<n>` form). For every issue named there — plus, when the PR was opened out of a `triage/<n>-<slug>` branch, the numeric `<n>` in that branch name — post a short one-liner via `gh issue comment <n>` on that issue: what CI failure this slot addressed, the new head SHA, and a link back to the PR. Rule 13 disclosure block goes on top. This keeps the issue thread from looking abandoned across the multiple slots a PR usually takes to green up.
 
@@ -225,9 +231,11 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
    - Skip anything assigned to a human that is not `agent.github_user` (rule 5). Self-assignment carve-out: if the assignee set is exactly `[<ticket_author>]`, treat the ticket as unassigned. If any assignee is neither the agent nor the author, skip.
    - Skip anything already labelled with rules-listed skip labels.
 6a. **Core-team review skip (rule 8b).** For PR candidates, fetch `gh pr view <n> --json reviews,comments,body`. If any element of `reviews[]` has `author.login` in `agent.core_team_reviewers` AND `state` in {`APPROVED`, `CHANGES_REQUESTED`, `DISMISSED`}, skip the PR as a zero-write iteration (rule 11a) — bookkeeping-only `meta.last_seen.checked_at` bump on the envelope if one exists, no new envelope, no comment, fall through to the next candidate. `state = COMMENTED` does not trigger the skip. **Override:** first grep every comment body and every review body on the PR for `@<agent.github_user>` (case-insensitive). If any core-team member's comment or review body carries the mention, the skip is cancelled — treat it as a direct request: post a rule 11a comment-only reply on the thread they mentioned us in (rule 13 disclosure block on top), answer the specific question or scope the targeted review they asked for, do NOT open a full round-0 review of the whole PR, do NOT self-assign, do NOT commit the slot. This is still one iteration in the rule 11a chain, not the slot's committed ticket.
-7. Take exactly ONE ticket. Do not queue several — you are not concurrent.
+7. Take up to N fresh tickets, where N is the remaining budget after in-flight envelopes and own-PR fixups are counted against the `roles.concurrency` (=6) cap. Walk the queue in the priority order above and accept a candidate only if its `<owner>/<repo>` is not already in this slot's accepted set (worktree dedupe — see the escalate-extras block above). Skipped duplicates stay in the queue for the next slot.
 
-If no ticket qualifies, log "nothing to do this slot" and exit.
+Rule 11a comment-only chain semantics still apply per candidate — a zero-write iteration or comment-only iteration on any of the fanned-out candidates does NOT commit the slot for that candidate, and the manager may loop back to the pick step for that specific slot in the fanned-out set. The slot commits to the union of every candidate that produced real work.
+
+If no ticket qualifies and the accepted set is empty, log "nothing to do this slot" and exit.
 
 ### Open a ticket (intake)
 
@@ -251,21 +259,33 @@ For the ticket you picked:
    git -C workspace/<repo> fetch --prune origin
    ```
    Do NOT `reset --hard` / `clean -fdx` / `checkout` on `workspace/<repo>` itself: the slot works on a private worktree (4b), and another slot may already have branches checked out on it. The shared clone stays on the default branch, untouched.
-4b. **Per-slot git worktree.** Every slot works in an isolated checkout so two managers running against overlapping tickets do not stomp each other's branch state. Create it at slot start (or reuse it across chained iterations within the same slot):
+4b. **Per-ticket git worktree.** Every ticket in this slot's fanned-out set works in its own isolated checkout so the up-to-6 parallel workers do not stomp each other's branch state (and so two managers on overlapping repos in successive slots stay isolated too). Create it right before dispatching the worker for that ticket:
    ```
-   WT=workspace/<repo>-slot<slot_seq>
+   WT=workspace/<repo>-slot<slot_seq>-<pr_or_issue_number>
    git -C workspace/<repo> worktree add --detach "$WT" upstream/<default_branch> \
      || git -C workspace/<repo> worktree add "$WT" upstream/<default_branch>
    git -C "$WT" reset --hard upstream/<default_branch>
    git -C "$WT" clean -fdx
    ```
-   All subsequent `git`, `docker build`, test runs, and `git push origin <branch>` in this slot use `$WT`, not `workspace/<repo>`. Record the path in `envelope.meta.worktree` so the audit trail can point at what was actually built. At slot end (`outcome=finished` or `outcome=error`), tear the worktree down: `git -C workspace/<repo> worktree remove --force "$WT"`. Chained iterations inside one slot reuse the same worktree — check it exists before recreating.
+   All subsequent `git`, `docker build`, test runs, and `git push origin <branch>` for that ticket use its `$WT`, not `workspace/<repo>`. Record the path in the ticket's `envelope.meta.worktree` so the audit trail can point at what was actually built. As soon as each subagent returns (per rule 7a), tear its worktree down: `git -C workspace/<repo> worktree remove --force "$WT"`. Chained iterations for the same ticket inside one slot reuse the same worktree — check it exists before recreating. Because the slot dedupes candidates by repo (see the escalate-extras block above), no two per-ticket worktrees inside one slot ever target the same `<repo>`.
 4c. **Audit DB in WAL mode.** At slot startup, ensure `workspace/.state/audit.sqlite` is in WAL journal mode so two slots can commit rows simultaneously without one blocking the other on the file lock. Idempotent:
    ```
    sqlite3 workspace/.state/audit.sqlite \
      "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;" >/dev/null
    ```
-   The pragma is persistent on the DB file, so this is a no-op on every slot after the first, but running it every time keeps a fresh clone from silently regressing to `delete` mode. Never write to the DB via `sqlite3` without opening a short `BEGIN IMMEDIATE`/`COMMIT` around multi-statement writes — that is how you get `SQLITE_BUSY` under concurrency.
+   The pragma is persistent on the DB file, so this is a no-op on every slot after the first, but running it every time keeps a fresh clone from silently regressing to `delete` mode.
+
+   **HARD RULE: every multi-statement write to `workspace/.state/audit.sqlite` MUST be wrapped in `BEGIN IMMEDIATE; ... COMMIT;`.** With fan-out enabled, the manager writes several `events` / `costs` / `worker_reports` rows in quick succession as each of up to 6 subagents returns; without `BEGIN IMMEDIATE` around the batch, SQLite serializes them at statement granularity and readers or concurrent writers can trip `SQLITE_BUSY`. Concretely:
+   ```
+   sqlite3 workspace/.state/audit.sqlite <<SQL
+   BEGIN IMMEDIATE;
+   INSERT INTO events(...) VALUES (...);
+   INSERT INTO costs(...) VALUES (...);
+   INSERT INTO worker_reports(...) VALUES (...);
+   COMMIT;
+   SQL
+   ```
+   Single-statement writes (one INSERT, one UPDATE) do not need the wrapper — SQLite's implicit transaction is enough — but the moment two or more statements are grouped, `BEGIN IMMEDIATE` is mandatory. Never open a long-lived write transaction; keep the block short (open, insert, commit) so other writers can proceed.
 5. Fetch upstream, fast-forward the default branch on the fork, push the updated default to the fork (rule 7). Create the working branch: `triage/<n>-<slug>` for issues, `review-repro/<n>` for PRs.
 6. For PRs, check the author login. Record it in `envelope.pre_review.pr_author` (the reviewer keys the rule 9a.i walkthrough mode off this field). If it is not `agent.github_user`, set `envelope.pre_review.third_party = true`. This gates the coder/tester/docs branches of the state machine — see "Third-party PRs" below.
 
@@ -289,10 +309,16 @@ Re-run this collection at the start of every reviewer round — later rounds see
 
 ### Advance the state machine
 
-Reload the envelope. Dispatch the role that matches the current phase using the `Agent` tool. Every dispatch prompt must include:
+For each accepted ticket in this slot's set (up to 6), reload its envelope and prepare a dispatch. The role to spawn matches the ticket's current phase; the per-ticket worktree from 4b is passed in as the workspace path so each subagent operates on its own isolated checkout.
 
-- The absolute path to the envelope.
-- The absolute path to the workspace clone.
+**Parallel fan-out.** Fire ALL prepared dispatches in a SINGLE `Agent`-tool block — that is Claude Code's mechanism for parallel tool calls. One block with N `Agent` invocations (N ≤ 6) means the workers run concurrently; the block resolves when the last one returns, at which point the manager collects every worker's output. Do NOT loop and dispatch one at a time — that reverts to serial execution and defeats the fan-out. If N == 1 for this slot (only one candidate qualified), the block still holds exactly one call; the shape is uniform.
+
+After the block resolves, walk the returns in a stable order (accepted-set order) and process each one — re-read its envelope, append reviewer verdicts to `history`, advance `phase`, insert per-ticket `events` / `costs` / `worker_reports` rows (batched under one `BEGIN IMMEDIATE`/`COMMIT` per ticket), and tear down the per-ticket worktree. A worker that errored is handled per that ticket only — the other returns still process normally; the slot-level `outcome` becomes `error` only if any one ticket errored.
+
+Every dispatch prompt must include:
+
+- The absolute path to the ticket's envelope.
+- The absolute path to the ticket's per-slot worktree (`workspace/<repo>-slot<slot_seq>-<pr_or_issue_number>`), NOT the shared clone.
 - The upstream ticket URL (issue or PR).
 - The current round number.
 - Any prior reviewer comments if this is a repeat pass through `coding`/`testing`/`docs`.

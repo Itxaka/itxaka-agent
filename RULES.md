@@ -141,18 +141,19 @@ Before creating a working branch the agent:
 
 No branching from stale local state. No branching from feature branches. No committing to `main` directly.
 
-## 7a. Per-slot worktree — never share a checkout across managers
+## 7a. Per-ticket worktree — never share a checkout across managers or tickets
 
-`workspace/<repo>/` is the shared **object store**, not a working tree. Every slot works in its own worktree at `workspace/<repo>-slot<slot_seq>/`, created at slot start and torn down at slot end. Two managers hitting overlapping tickets can no longer stomp each other's `HEAD` or dirty state because they don't share a checkout in the first place.
+`workspace/<repo>/` is the shared **object store**, not a working tree. Every ticket in a slot's fanned-out set works in its own worktree at `workspace/<repo>-slot<slot_seq>-<pr_or_issue_number>/`, created right before its worker dispatches and torn down as soon as that worker returns. Two managers hitting overlapping tickets in successive slots — and up to 6 parallel workers inside one slot — can no longer stomp each other's `HEAD` or dirty state because they don't share a checkout in the first place. The manager also dedupes accepted candidates by repo per slot, so two per-ticket worktrees never target the same `<repo>` at the same time.
 
 At slot start (or the first chained iteration inside a slot):
 
 1. `git -C workspace/<repo> fetch --prune upstream` and `git -C workspace/<repo> fetch --prune origin` — refresh the shared object store. No `reset --hard`, no `clean -fdx`, no `checkout` on the shared clone itself; another slot may already have branches checked out on it.
-2. `git -C workspace/<repo> worktree add workspace/<repo>-slot<slot_seq> upstream/<default_branch>` — the slot's private checkout. All subsequent reads, writes, `git push`, and worker dispatches use this path.
-3. Record the path in `envelope.meta.worktree` so the audit trail can name what was actually built.
-4. At slot end (`outcome=finished` or `outcome=error`), `git -C workspace/<repo> worktree remove --force workspace/<repo>-slot<slot_seq>` — leaving stale worktrees behind is fine for one or two slots but drifts into disk-space rot over a week.
+2. For each accepted ticket, right before its worker dispatch:
+   `git -C workspace/<repo> worktree add workspace/<repo>-slot<slot_seq>-<n> upstream/<default_branch>` — the ticket's private checkout. All subsequent reads, writes, `git push`, and worker dispatches for that ticket use this path.
+3. Record the path in that ticket's `envelope.meta.worktree` so the audit trail can name what was actually built.
+4. As soon as each subagent returns (or the ticket errors), `git -C workspace/<repo> worktree remove --force workspace/<repo>-slot<slot_seq>-<n>` — leaving stale worktrees behind is fine for one or two slots but drifts into disk-space rot over a week.
 
-Chained iterations inside one slot (rule 11a) reuse the same worktree — check it exists before recreating. Cross-ticket transitions inside one slot re-run steps 2's `reset --hard upstream/<default_branch>` + `clean -fdx` **on the worktree, not the shared clone**.
+Chained iterations for the SAME ticket inside one slot (rule 11a) reuse the same worktree — check it exists before recreating. Cross-ticket transitions never happen inside a single per-ticket worktree; each ticket gets its own from the start.
 
 Rationale: successive slots used to reuse one clone. When a slot ran past the 15-min cron tick (slot 80: 95 min), the next tick fired a second manager that read `HEAD` off a branch the first manager had just checked out. That is what corrupted slot 87's round-0 tester dispatch and produced the `meta.concurrency_incident` on kairos-io/kairos#149. The worktree split kills that entire class — two managers on different tickets see zero contention, and two managers on the *same* ticket at least fight over identifiable per-ticket state (fold-on-read events, per-ticket `gh.lock`) instead of silently stomping one shared checkout.
 
@@ -165,7 +166,7 @@ sqlite3 workspace/.state/audit.sqlite \
   "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;" >/dev/null
 ```
 
-Every multi-statement write from the manager wraps in a short `BEGIN IMMEDIATE`/`COMMIT` transaction. Long-lived write transactions are the way to get `SQLITE_BUSY` under overlap even with WAL on.
+**HARD RULE:** every multi-statement write from the manager MUST wrap in a short `BEGIN IMMEDIATE`/`COMMIT` transaction. With fan-out (`roles.concurrency: 6`) the manager writes a batch of per-ticket `events` / `costs` / `worker_reports` rows as each of up to 6 subagents returns; without the wrapper the batch trips `SQLITE_BUSY` under overlap even with WAL on. Long-lived write transactions are equally bad — keep the block short (open, insert, commit). Single-statement writes (one INSERT, one UPDATE) do not need the wrapper.
 
 ## 8. PR review comes before issue triage
 
@@ -318,7 +319,7 @@ This keeps the agent's pace human-observable while letting quiet slots make prog
 
 ### 11a. Non-committing iterations are free — chain to the next queue item
 
-An iteration on a candidate ticket only **commits** the slot to that ticket when it did real work: pushed a branch, opened / edited a PR, or dispatched a coder / tester / reviewer / docs subagent. Anything less is a **non-committing iteration** and does NOT consume the slot's "one ticket" budget. The two flavors:
+An iteration on a candidate ticket only **commits** the slot to that ticket when it did real work: pushed a branch, opened / edited a PR, or dispatched a coder / tester / reviewer / docs subagent. Anything less is a **non-committing iteration** and does NOT consume any of the slot's `roles.concurrency` (=6) ticket slots. The two flavors:
 
 - **Zero-write iterations** — the manager polled a candidate and found nothing to do (a rule 12b dormant `awaiting-author` envelope, a rule 8a own PR that is `MERGEABLE` with no CHANGES_REQUESTED and no new comments, a fresh queue item that got filtered by rule 5 or `rules.yaml` at intake). The `meta.last_seen.checked_at` bump on the envelope is not "work" — it is bookkeeping.
 - **Comment-only iterations** — the manager's only mutating action was posting comments (`gh issue comment`, `gh pr comment`, an inline `gh pr review` body, a `gh pr edit --body` metadata retouch, or a rule 4a linked-issue progress note). After posting, the ticket is by construction waiting on a human.
@@ -525,4 +526,4 @@ Every role runs in its own subprocess. Consequences:
 
 Model choice is per role, configured under `roles.runtimes.<role>.model`. The default assignments in `config/config.yaml` reflect the workload weight of each role. Operators may swap in different models — for example, deliberately picking a different model family for the reviewer to widen the perspective gap — without any code change.
 
-Concurrency stays at `roles.concurrency: 1` for now. Rule 11 slot alignment is easier to reason about with a single ticket in flight, and the workload volume does not yet justify parallelism. Raising it later is a config change plus a per-repo lock in the workspace.
+Concurrency is `roles.concurrency: 6`. A single manager invocation fans out up to 6 worker subagents in parallel per slot — one per accepted ticket — inside one `Agent`-tool block. The upper bound is per-repo worktree isolation: two candidates on the same `<owner>/<repo>` cannot run in the same slot because they would collide on the shared object store, so the manager dedupes accepted candidates by repo and defers duplicates to the next slot. Rule 11 slot alignment still holds — the slot closes when the last subagent returns, and every downstream aggregate (cost, `envelope_writes`, `wall_ms`) sums across the set.

@@ -347,7 +347,7 @@ Self-assignment plus the initial disclosure comment (rule 4) are the visibility 
 - A PR the agent is reviewing (own-PR fixup or third-party review). Reviewers show up in the PR's `reviewRequests`/`reviews`, not `assignees` — self-assigning as reviewer confuses the assignee semantics maintainers use.
 - Any ticket where someone else is already assigned (rule 5 handles the skip; the self-assignment carve-out only applies when the sole assignee is the ticket author).
 
-The agent does not create, apply, or remove repository labels, and does not update GitHub Project (v2) status columns — those taxonomies belong to the human maintainers, and the Second Foundation's access to them varies per repo. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
+The agent does not create, apply, or remove repository labels. GitHub Project (v2) status columns are also off-limits, with ONE exception: whenever the agent opens a new PR of its own (`gh pr create`, not a fixup push or a third-party review), it MUST add that PR to the kairos-io org QA board (project 1) and set its Status field to "QA" — the ready-for-QA column a human on the QA rotation picks work out of. The exact `gh project item-add` + `gh project item-edit` calls, project id, field id, and QA option id are in the manager's "Finalize" step 2a. Skip for third-party PRs, fixup pushes, and drafts. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
 
 ## 12b. Skip a resumed review when nothing changed
 

@@ -231,6 +231,16 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
    - Skip anything assigned to a human that is not `agent.github_user` (rule 5). Self-assignment carve-out: if the assignee set is exactly `[<ticket_author>]`, treat the ticket as unassigned. If any assignee is neither the agent nor the author, skip.
    - Skip anything already labelled with rules-listed skip labels.
 6a. **Core-team review skip (rule 8b).** For PR candidates, fetch `gh pr view <n> --json reviews,comments,body`. If any element of `reviews[]` has `author.login` in `agent.core_team_reviewers` AND `state` in {`APPROVED`, `CHANGES_REQUESTED`, `DISMISSED`}, skip the PR as a zero-write iteration (rule 11a) — bookkeeping-only `meta.last_seen.checked_at` bump on the envelope if one exists, no new envelope, no comment, fall through to the next candidate. `state = COMMENTED` does not trigger the skip. **Override:** first grep every comment body and every review body on the PR for `@<agent.github_user>` (case-insensitive). If any core-team member's comment or review body carries the mention, the skip is cancelled — treat it as a direct request: post a rule 11a comment-only reply on the thread they mentioned us in (rule 13 disclosure block on top), answer the specific question or scope the targeted review they asked for, do NOT open a full round-0 review of the whole PR, do NOT self-assign, do NOT commit the slot. This is still one iteration in the rule 11a chain, not the slot's committed ticket.
+6b. **Linked-PR skip for issues.** For every issue candidate (any rung of the `triage_issues` pipeline), before accepting it query:
+    ```
+    gh api graphql -f query='query($owner:String!,$name:String!,$n:Int!){
+      repository(owner:$owner,name:$name){ issue(number:$n){
+        closedByPullRequestsReferences(first:10,includeClosedPrs:false){
+          nodes{ number state author{login} repository{nameWithOwner} }
+        }
+      }}}' -f owner=<owner> -f name=<repo> -F n=<n>
+    ```
+    If ANY node has `state=OPEN`, treat the issue as already taken and skip it as a zero-write iteration — do not open an envelope, do not self-assign, do not comment, fall through to the next candidate. Reason: another contributor (human or bot) has an unmerged PR fixing it, and we would duplicate the work. If every linked PR is closed/merged without the issue closing, the issue is actionable — do not skip. In dry-run mode run the same query (reads are always on).
 7. Take up to N fresh tickets, where N is the remaining budget after in-flight envelopes and own-PR fixups are counted against the `roles.concurrency` (=6) cap. Walk the queue in the priority order above and accept a candidate only if its `<owner>/<repo>` is not already in this slot's accepted set (worktree dedupe — see the escalate-extras block above). Skipped duplicates stay in the queue for the next slot.
 
 Rule 11a comment-only chain semantics still apply per candidate — a zero-write iteration or comment-only iteration on any of the fanned-out candidates does NOT commit the slot for that candidate, and the manager may loop back to the pick step for that specific slot in the fanned-out set. The slot commits to the union of every candidate that produced real work.

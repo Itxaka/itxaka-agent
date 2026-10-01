@@ -398,16 +398,6 @@ A PR whose author is not `agent.github_user` is third-party (Renovate, human con
 
 1. Push the working branch to the fork: `git -C workspace/<repo> push origin <branch>` (never to `upstream`).
 2. Open the PR against upstream: `gh pr create --repo <owner>/<repo> --base <default_branch> --head <fork_owner>:<branch> --title <...> --body <...>`. The title and body must start with the rule 13 disclosure block. The body links the audit summary comment (which you post next). **Rule 4b:** if the ticket the PR resolves is an issue (or if the coder's work fixes referenced issues listed in the envelope's `linked_issue_bodies`), the body carries one `Fixes: #<n>` line per resolved issue — use `Fixes: <owner>/<repo>#<n>` for cross-repo. This is what makes GitHub auto-link and auto-close on merge. Reviewer requests happen automatically upstream via CODEOWNERS or org routing — do not pass `--reviewer` on create.
-2a. **Add the new PR to the kairos-io QA board (org project 1, "QA" column).** Runs exactly once, right after `gh pr create` returns the PR URL — only for PRs opened by us this slot, never on fixup pushes or on third-party PRs we merely review. Two calls:
-   ```
-   ITEM_ID=$(gh project item-add 1 --owner kairos-io --url <pr_url> --format json --jq '.id')
-   gh project item-edit \
-     --project-id PVT_kwDOBrVfSM4AGI3D \
-     --id "$ITEM_ID" \
-     --field-id PVTSSF_lADOBrVfSM4AGI3DzgDia1k \
-     --single-select-option-id 3f5385f2
-   ```
-   The single-select-option-id `3f5385f2` is the "QA" status. A human on the QA rotation picks up items in that column and verifies them. Log both call outcomes in the `events` table; if either fails, do NOT roll back the PR — record the failure, post a one-line note in the PR body saying the QA board add failed and someone needs to add it manually, and continue. In dry-run mode, gate both calls under the audit banner like every other `gh` write. Skip entirely for third-party PRs the agent only reviews (rule 8b), for fixup pushes on already-open PRs (rule 8a), and for `gh pr create --draft`.
 3. Compose the audit summary from the envelope. Human-readable, chronological, one row per phase-round, listing role, commit shas / test paths / doc paths / log paths, and reviewer verdicts.
 4. Run the redactor from `audit.redact`: replace `$HOME` with `~`, MAC addresses with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs with `x.x.x.x`, and every `audit.redact.token_shapes` regex match with `<redacted>`. Run on both the summary and the envelope JSON. Also strip the top-level `cost` object from the envelope before it is uploaded — cost information stays local. If any role-authored text inside the envelope (comments, summaries, journal excerpts if you ever include them) mentions tokens or USD, mask those numbers as `<redacted>` too.
 5. Post the summary as an issue comment. Do NOT embed the envelope in the comment — the JSON dump duplicates the summary prose without adding readable signal and blew up comment sizes, so it is retired (rule 20). `workspace/.state/<owner>_<repo>/<n>/envelope.json` still lives locally as the source of truth for state and as the input to the dashboard; it just doesn't get published. Same for `envelope.redacted.json` — stop writing it as part of publishing since nothing consumes it externally now.

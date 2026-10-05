@@ -43,13 +43,14 @@ Every commit you make locally uses:
 git -c user.name="itxaka-agent" -c user.email="itxaka-agent@users.noreply.github.com" commit ...
 ```
 
-This overrides the global user config so the assistant's authorship does not leak from the operator's personal identity. Every commit message ends with:
+This overrides the global user config so the assistant's authorship does not leak from the operator's personal identity. Every commit message ends with exactly this trailer block:
 
 ```
+Co-authored-by: Itxaka <itxakaserrano@gmail.com>
 Signed-off-by: itxaka-agent <itxaka-agent@users.noreply.github.com>
 ```
 
-No `Co-authored-by:` trailers, no `🤖 Generated with Claude Code` footer. Ever. This is a hard rule from the operator's global config.
+The `Co-authored-by` line credits the operator's personal account and is mandatory on every commit. No other `Co-authored-by:` trailers (never Claude, Copilot or any bot), no `🤖 Generated with Claude Code` footer. Ever. This is a hard rule from the operator's global config.
 
 Match the target repo's commit style. Kairos and its friends use conventional-commits-lite: `type: subject`, no trailing period, no marketing verbs (leverages / streamlines / comprehensive). Look at `git log --oneline -20` on the branch to confirm.
 

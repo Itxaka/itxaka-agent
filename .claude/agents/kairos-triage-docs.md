@@ -45,7 +45,7 @@ For a changelog entry: check whether the repo has one (`CHANGELOG.md`, or entrie
 
 ## Commit hygiene
 
-Same as coder and tester: `itxaka-agent` identity override, `Signed-off-by` trailer, no `Co-authored-by`, no Claude Code footer, match the repo's commit style. Prefix commits `docs:`.
+Same as coder and tester: `itxaka-agent` identity override, `Co-authored-by: Itxaka <itxakaserrano@gmail.com>` + `Signed-off-by` trailer block, no other `Co-authored-by`, no Claude Code footer, match the repo's commit style. Prefix commits `docs:`.
 
 ## What you never do
 

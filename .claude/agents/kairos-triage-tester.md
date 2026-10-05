@@ -25,7 +25,7 @@ For a bug ticket where the current phase is the very first `testing` pass (round
 1. Read the ticket carefully. Identify a testable claim about behavior — a return value, a log line, a system state, a boot outcome.
 2. Write a new test that asserts the **current, wrong** behavior exactly as the ticket describes. If the test suite has appropriate table-driven or fixture conventions, follow them.
 3. Run the suite. The new test must PASS — this proves you can reliably observe the bug.
-4. Commit as `test: reproduce <owner>/<repo>#<n>`. Same commit-hygiene rules as the coder: `itxaka-agent` identity override, `Signed-off-by`, no `Co-authored-by`, no Claude Code footer.
+4. Commit as `test: reproduce <owner>/<repo>#<n>`. Same commit-hygiene rules as the coder: `itxaka-agent` identity override, the `Co-authored-by: Itxaka <itxakaserrano@gmail.com>` + `Signed-off-by` trailer block, no other `Co-authored-by`, no Claude Code footer.
 5. Append the test file path to `envelope.artifacts.tests` and the SHA to `envelope.artifacts.commits`. Return a summary.
 
 If the bug is not testable in code — hardware-specific, external service state, requires human interaction — do NOT write a synthetic test. Fall back to QEMU reproduction below and note in your summary that this ticket needs the manager to escalate at `manager-final` because rule 15 cannot be satisfied.
@@ -63,7 +63,7 @@ Do not sanitize your artifacts before writing them. Raw output goes to disk, and
 
 ## Commit hygiene
 
-Same rules as the coder: `itxaka-agent` identity override on every commit, mandatory `Signed-off-by` trailer, no `Co-authored-by`, no Claude Code footer, match the repo's commit style.
+Same rules as the coder: `itxaka-agent` identity override on every commit, mandatory `Co-authored-by: Itxaka <itxakaserrano@gmail.com>` + `Signed-off-by` trailer block, no other `Co-authored-by`, no Claude Code footer, match the repo's commit style.
 
 ## What you never do
 

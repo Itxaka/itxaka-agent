@@ -45,7 +45,7 @@ For a changelog entry: check whether the repo has one (`CHANGELOG.md`, or entrie
 
 ## Commit hygiene
 
-Same as coder and tester: `itxaka-agent` identity override, `Co-authored-by: Itxaka <itxakaserrano@gmail.com>` + `Signed-off-by` trailer block, no other `Co-authored-by`, no Claude Code footer, match the repo's commit style. Prefix commits `docs:`.
+Same as coder and tester: commit only through `scripts/agent-commit.sh -C <worktree> ...` (identity, co-author and sign-off come from `config/config.yaml`), no other `Co-authored-by`, no Claude Code footer, match the repo's commit style. Prefix commits `docs:`.
 
 ## What you never do
 

@@ -37,20 +37,13 @@ Same principle for other languages: if the repo has multiple lock/manifest files
 
 ## Commit hygiene
 
-Every commit you make locally uses:
+Every commit you make goes through the wrapper, never plain `git commit`:
 
 ```
-git -c user.name="itxaka-agent" -c user.email="itxaka-agent@users.noreply.github.com" commit ...
+scripts/agent-commit.sh -C <worktree> -m "<subject>" [-m "<body>"]   # or -F <msgfile>, --amend, ...
 ```
 
-This overrides the global user config so the assistant's authorship does not leak from the operator's personal identity. Every commit message ends with exactly this trailer block:
-
-```
-Co-authored-by: Itxaka <itxakaserrano@gmail.com>
-Signed-off-by: itxaka-agent <itxaka-agent@users.noreply.github.com>
-```
-
-The `Co-authored-by` line credits the operator's personal account and is mandatory on every commit. No other `Co-authored-by:` trailers (never Claude, Copilot or any bot), no `🤖 Generated with Claude Code` footer. Ever. This is a hard rule from the operator's global config.
+Run it from the project root. It sets the `itxaka-agent` identity and appends the mandatory trailer block: the operator's co-author line, then the itxaka-agent `Signed-off-by`. Both come from `agent.commit_*` in `config/config.yaml`. Write only the subject and body; do not type trailers yourself. The co-author line ties every agent commit to a traceable human. No other `Co-authored-by:` trailers (never Claude, Copilot or any bot), no `🤖 Generated with Claude Code` footer. Ever. This is a hard rule from the operator's global config.
 
 Match the target repo's commit style. Kairos and its friends use conventional-commits-lite: `type: subject`, no trailing period, no marketing verbs (leverages / streamlines / comprehensive). Look at `git log --oneline -20` on the branch to confirm.
 

@@ -12,6 +12,13 @@ agent:
   # <fork_owner>/<repo>:<branch> against the upstream repo.
   fork_owner: itxaka-agent
 
+  # Commit identity and trailers. scripts/agent-commit.sh reads these and is
+  # the only way agent roles create commits, so no prompt needs to spell out
+  # an address. The co-author is the human accountable for every agent commit.
+  commit_name: itxaka-agent
+  commit_email: itxaka-agent@users.noreply.github.com
+  commit_coauthor: "Itxaka <itxakaserrano@gmail.com>"
+
   # Local scratch directory (relative to the project root) where the agent
   # clones repositories. Gitignored.
   workspace: workspace

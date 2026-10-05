@@ -320,7 +320,7 @@ The reviewer's tool set is `Read, Grep, Glob` — no `Bash`, no `Write`. Any com
 - `commit_log`: `git -C workspace/<repo> log --oneline upstream/<base>..<branch>`.
 - `diff_path`: full diff written to `workspace/.state/<owner>_<repo>/<n>/diff.patch` via `git -C workspace/<repo> diff upstream/<base>...<branch> > <path>`.
 - `linked_issue_bodies`: a `{ "owner/repo#n": "<body>" }` map for every issue / PR referenced from the ticket description. Use `gh issue view` / `gh pr view` (reads only).
-- `commit_trailers`: for every commit in `commit_log`, capture the full message and its parsed trailer block. Run `git -C workspace/<repo> show --no-patch --format='%H%n%B%n---END---' <sha>` for each SHA, then parse the trailer block (lines matching `^[A-Za-z-]+:` at the end of the message, no blank line breaks in between). Emit `[{ "sha": "<sha>", "subject": "<first line>", "trailers": { "Signed-off-by": ["..."], "Co-authored-by": ["..."] } }, ...]`. This lets the reviewer verify DCO compliance and check that our own commits carry exactly the `Co-authored-by: Itxaka <itxakaserrano@gmail.com>` co-author line (and no other co-author) without needing shell access.
+- `commit_trailers`: for every commit in `commit_log`, capture the full message and its parsed trailer block. Run `git -C workspace/<repo> show --no-patch --format='%H%n%B%n---END---' <sha>` for each SHA, then parse the trailer block (lines matching `^[A-Za-z-]+:` at the end of the message, no blank line breaks in between). Emit `[{ "sha": "<sha>", "subject": "<first line>", "trailers": { "Signed-off-by": ["..."], "Co-authored-by": ["..."] } }, ...]`. This lets the reviewer verify DCO compliance and check that our own commits carry exactly the `agent.commit_coauthor` co-author line (and no other co-author) without needing shell access.
 - `action_pins`: **only when the diff touches a `uses:` line pinned to a 40-char SHA with a `# <tag>` comment** — resolve the tag against the upstream action repo and record whether the pin is honest. For every such changed line in the diff:
   ```
   git ls-remote --tags https://github.com/<action_owner>/<action_repo> <tag>^{}
@@ -422,6 +422,12 @@ A PR whose author is not `agent.github_user` is third-party (Renovate, human con
   After the review posts, publish the audit trail, leave the PR untouched otherwise (no self-assignment — rule 12), and set `phase: awaiting-author`. The envelope is NOT `done` — the next slot re-polls this ticket, and if the author has pushed new commits since the recorded `head_sha`, regenerate `pre_review` and dispatch the reviewer again with `round++`. If `max_review_rounds` is reached without a new push, escalate per rule 18.
 
 `awaiting-author` is a terminal-for-this-slot state; it does not consume the ticket, only the slot. On the next slot boundary the manager re-picks the same envelope if the Second Foundation is still assigned.
+
+### Commit identity and trailers
+
+Every commit the Second Foundation creates goes through `scripts/agent-commit.sh -C <worktree> [git commit args...]`. It sets the itxaka-agent identity and appends the operator co-author line plus the itxaka-agent `Signed-off-by` from `agent.commit_*` in `config/config.yaml`. This covers your own fixup commits, conflict-resolution commits and amends. For rebases, run `git -c user.name=<agent.commit_name> -c user.email=<agent.commit_email> rebase ...` so the committer is the agent; commits that were already ours keep their trailers. Before any push, check the trailers of every unpushed commit with `git log --format=%B <upstream>..HEAD`.
+
+When dispatching coder, tester or docs, do NOT paste the trailer block, the co-author name or any email address into the dispatch prompt. Say "commit with scripts/agent-commit.sh". The worker's agent file covers the rest. Personal addresses in dispatch prompts get the dispatch blocked as PII handling.
 
 ### Finalize (manager-final)
 

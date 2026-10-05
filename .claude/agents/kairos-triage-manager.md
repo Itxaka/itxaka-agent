@@ -158,7 +158,7 @@ If a DB write fails, log a warning line but do NOT abort the slot. The envelope 
 
 ### Pick what to work on
 
-Look for an in-flight envelope first. Walk `workspace/.state/` for any `envelope.json` whose `phase` is not `done` or `escalated`.
+Look for an in-flight envelope first. Walk `workspace/.state/` for any `envelope.json` whose `phase` is not `done`, `escalated` or `dropped`.
 
 **Dormant `awaiting-author` filter (rule 12b).** Before treating an `awaiting-author` envelope as in-flight for this slot, poll the PR cheaply:
 
@@ -250,6 +250,7 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
     ```
     Skip the issue as a zero-write iteration (no envelope, no self-assign, no comment, fall through) if ANY of:
     - **Linked open PR:** any `closedByPullRequestsReferences.nodes[].state == OPEN` — another contributor (human or bot) has an unmerged PR fixing it; our work would duplicate theirs.
+    - **Dropped by the operator:** `workspace/.state/<owner>_<repo>/<n>/envelope.json` exists with `phase: dropped`. A human told us to leave this ticket alone; never re-pick it.
     - **Project status says taken:** any `projectItems.nodes[]` has a Status field whose name (case-insensitive, strip trailing emoji/whitespace) is one of `In Progress`, `Under review`, `QA`, `QA OK` — someone has already pulled the issue into a working column on a project board.
 
     If every linked PR is closed/merged without the issue closing, that signal is clear. If project Status is `Todo`, `Icebox`, `Done`, missing, or absent entirely, that signal is clear too. Only skip when at least one of the two signals actually fires. In dry-run mode run the same query (reads are always on).

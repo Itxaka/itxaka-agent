@@ -272,7 +272,7 @@ For the ticket you picked:
    ```
 
    The body states what you are about to do (review, or investigate and reproduce).
-2. Self-assign **for issues only**: `gh issue edit <n> --add-assignee <agent.github_user>`. **Do NOT self-assign on any PR** — reviewers belong in `reviewRequests`/`reviews`, not `assignees`, and self-assigning as reviewer confuses maintainer tooling. Rule 12 spells this out. Do NOT create or apply repository labels, and do NOT update GitHub Project (v2) status columns.
+2. Self-assign **for issues only**: `gh issue edit <n> --add-assignee <agent.github_user>`. **Do NOT self-assign on any PR** — reviewers belong in `reviewRequests`/`reviews`, not `assignees`, and self-assigning as reviewer confuses maintainer tooling. Rule 12 spells this out. Do NOT create or apply repository labels, and do NOT update GitHub Project (v2) status columns — the only board writes are Finalize step 2a (own new PR) and the third-party approve path (see "Third-party PRs").
 3. Create the envelope at `workspace/.state/<owner>_<repo>/<n>/envelope.json` with the schema from `docs/agent-roles.md`. Set `phase: coding` for issues, `phase: reviewing` for PRs.
 4. Ensure the fork clone exists at `workspace/<repo>/`. If not, `gh repo fork` (if the fork does not exist upstream on the agent account) and `git clone https://github.com/<fork_owner>/<repo>.git workspace/<repo>`. Add upstream: `git remote add upstream https://github.com/<owner>/<repo>.git`. This clone is the shared **object store**; nothing checks branches out on it directly any more (see 4b).
 4a. **Clean-slate reset (rule 7a).** Refresh the shared object store — cheap, no working-tree churn:
@@ -393,7 +393,13 @@ Track builder cost the same way you track reviewer cost: read `subagent_tokens` 
 
 A PR whose author is not `agent.github_user` is third-party (Renovate, human contributors). The Second Foundation has no license to rewrite someone else's branch, so the coder/tester/docs pipeline is skipped:
 
-- On `approve`: post an approving review (`gh pr review --approve --body <disclosure + one-line summary>`), publish the audit trail, set `phase: done`, and drop the ticket for the cycle.
+- On `approve`: post an approving review (`gh pr review --approve --body <disclosure + one-line summary>`), move the PR to the QA column on the board (below), publish the audit trail, set `phase: done`, and drop the ticket for the cycle.
+
+  **QA board move on approve (rule 12).** Right after the approving review posts, check where the PR sits on the board:
+  ```
+  gh pr view <n> --repo <owner>/<repo> --json projectItems --jq '.projectItems[] | select(.title | test("Issue tracking board")) | .status.name'
+  ```
+  If the status (case-insensitive, trailing emoji/whitespace stripped) is `QA`, `QA OK`, or `Done`, leave it — do not move a PR backwards. Otherwise run the same two calls as Finalize step 2a (`gh project item-add 1 --owner kairos-io --url <pr_url> ...` then `gh project item-edit ... --single-select-option-id 3f5385f2`); `item-add` returns the existing item id when the PR is already on the board, so it is safe to run unconditionally. Log both call outcomes in `events`; if either fails, do NOT retract the review — record the failure in the audit summary and continue. Gate both calls in dry-run like every other `gh` write. Never on `changes-requested`, never on a rule 6a comment-only reply.
 - On `changes-requested`: post the review AND every per-finding comment as inline diff comments in a single API call — this is rule 12a. Assemble the payload as:
   ```
   gh api /repos/<owner>/<repo>/pulls/<n>/reviews -X POST \
@@ -420,7 +426,7 @@ A PR whose author is not `agent.github_user` is third-party (Renovate, human con
 
 1. Push the working branch to the fork: `git -C workspace/<repo> push origin <branch>` (never to `upstream`).
 2. Open the PR against upstream: `gh pr create --repo <owner>/<repo> --base <default_branch> --head <fork_owner>:<branch> --title <...> --body <...>`. The title and body must start with the rule 13 disclosure block. The body links the audit summary comment (which you post next). **Rule 4b:** if the ticket the PR resolves is an issue (or if the coder's work fixes referenced issues listed in the envelope's `linked_issue_bodies`), the body carries one `Fixes: #<n>` line per resolved issue — use `Fixes: <owner>/<repo>#<n>` for cross-repo. This is what makes GitHub auto-link and auto-close on merge. Reviewer requests happen automatically upstream via CODEOWNERS or org routing — do not pass `--reviewer` on create.
-2a. **Add the new PR to the kairos-io QA board (org project 1, "QA" column).** Runs exactly once, right after `gh pr create` returns the PR URL — only for PRs opened by us this slot, never on fixup pushes or on third-party PRs we merely review. Two calls:
+2a. **Add the new PR to the kairos-io QA board (org project 1, "QA" column).** Runs exactly once, right after `gh pr create` returns the PR URL — only for PRs opened by us this slot, never on fixup pushes. (Approved third-party PRs reuse these same calls from the "Third-party PRs" approve path.) Two calls:
    ```
    ITEM_ID=$(gh project item-add 1 --owner kairos-io --url <pr_url> --format json --jq '.id')
    gh project item-edit \
@@ -429,7 +435,7 @@ A PR whose author is not `agent.github_user` is third-party (Renovate, human con
      --field-id PVTSSF_lADOBrVfSM4AGI3DzgDia1k \
      --single-select-option-id 3f5385f2
    ```
-   The single-select-option-id `3f5385f2` is the "QA" status. A human on the QA rotation picks up items in that column and verifies them. Log both call outcomes in the `events` table; if either fails, do NOT roll back the PR — record the failure, post a one-line note in the PR body saying the QA board add failed and someone needs to add it manually, and continue. In dry-run mode, gate both calls under the audit banner like every other `gh` write. Skip entirely for third-party PRs the agent only reviews (rule 8b), for fixup pushes on already-open PRs (rule 8a), and for `gh pr create --draft`.
+   The single-select-option-id `3f5385f2` is the "QA" status. A human on the QA rotation picks up items in that column and verifies them. Log both call outcomes in the `events` table; if either fails, do NOT roll back the PR — record the failure, post a one-line note in the PR body saying the QA board add failed and someone needs to add it manually, and continue. In dry-run mode, gate both calls under the audit banner like every other `gh` write. Skip here for third-party PRs (their board move happens on approve, in "Third-party PRs"), for fixup pushes on already-open PRs (rule 8a), and for `gh pr create --draft`.
 3. Compose the audit summary from the envelope. Human-readable, chronological, one row per phase-round, listing role, commit shas / test paths / doc paths / log paths, and reviewer verdicts.
 4. Run the redactor from `audit.redact`: replace `$HOME` with `~`, MAC addresses with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs with `x.x.x.x`, and every `audit.redact.token_shapes` regex match with `<redacted>`. Run on both the summary and the envelope JSON. Also strip the top-level `cost` object from the envelope before it is uploaded — cost information stays local. If any role-authored text inside the envelope (comments, summaries, journal excerpts if you ever include them) mentions tokens or USD, mask those numbers as `<redacted>` too.
 5. Post the summary as an issue comment. Do NOT embed the envelope in the comment — the JSON dump duplicates the summary prose without adding readable signal and blew up comment sizes, so it is retired (rule 20). `workspace/.state/<owner>_<repo>/<n>/envelope.json` still lives locally as the source of truth for state and as the input to the dashboard; it just doesn't get published. Same for `envelope.redacted.json` — stop writing it as part of publishing since nothing consumes it externally now.

@@ -90,7 +90,7 @@ SQL
   Only shell-safe values (slot_id, ticket_ref, role, round, ts, paths without single quotes) go inline; all free-form TEXT arrives through `readfile()` on a temp file. Same pattern for any other INSERT where a value could contain newlines, quotes, or backticks — commit messages, comment bodies, verdict comment text, gated-call command strings all deserve this treatment. If the journal file is missing, `readfile()` would error, so branch as shown above and let `journal` be `NULL` — do not treat missing journal as slot failure, just note it in the `events.return` row's `note` column.
 - `gated_calls` — every command you print under `[dry-run]` also inserts here. Skip in live mode.
 
-At the end of every invocation THAT INSERTED A SLOT ROW, close the slot with one UPDATE. With fan-out enabled, the slot row aggregates across every dispatched ticket in this slot's set (up to 6):
+At the end of every invocation THAT INSERTED A SLOT ROW, close the slot with one UPDATE. With fan-out enabled, the slot row aggregates across every dispatched ticket in this slot's set (up to `roles.concurrency`):
 
 ```
 UPDATE slots SET
@@ -170,7 +170,7 @@ Compare against `envelope.meta.last_seen.head_sha` and the timestamp of our last
 
 If the envelope IS non-dormant (author pushed, or a human commented), resume it normally.
 
-Take up to 6 non-dormant in-flight envelopes as this slot's tickets — `roles.concurrency` is 6 and one manager fans out that many workers per slot. If more than 6 exist, work the 6 oldest (by envelope `meta.first_seen_at`) and let the rest wait for the next slot. The old "escalate extras" rule is retired — multiple in-flight envelopes is now the designed state, not an error.
+Take up to `roles.concurrency` (read it from `config/config.yaml`; currently 1) non-dormant in-flight envelopes as this slot's tickets — one manager fans out at most that many workers per slot. If more than that exist, work the 6 oldest (by envelope `meta.first_seen_at`) and let the rest wait for the next slot. The old "escalate extras" rule is retired — multiple in-flight envelopes is now the designed state, not an error.
 
 **Dedupe by repo before dispatch.** Two candidates on the same `<owner>/<repo>` cannot run in the same slot: the per-slot worktree pattern `workspace/<repo>-slot<slot_seq>-<n>` still shares the repo's shared object store, and two concurrent workers on the same repo would race on `git fetch --prune` and on the pack files. Walk the collected in-flight envelopes in age order and skip any whose repo already appears in the accepted set; the skipped ones stay in flight and are picked up next slot.
 
@@ -192,7 +192,7 @@ For each returned PR, decide if it needs action:
 
 If none of those hold — the PR is `MERGEABLE`, no failing checks, `reviewDecision` is `null` / `APPROVED` / `REVIEW_REQUIRED` — do NOTHING for this slot on that PR. Sitting on a maintainer is not a reason to comment; skip and continue to the next own PR or to the rule 8 pipeline.
 
-Own-PR fixups feed into the same up-to-6 candidate set as in-flight envelopes and fresh picks. Prioritize CI red (functional break) > reviewer changes-requested > merge conflict when there are more than 6 actionable own PRs. Skip any that share a repo with a candidate already accepted this slot (worktree collision — the sibling gets it next slot). Open a fresh envelope per accepted fixup PR, exactly as before; the change is that several may open in the same slot.
+Own-PR fixups feed into the same up-to-`roles.concurrency` candidate set as in-flight envelopes and fresh picks. Prioritize CI red (functional break) > reviewer changes-requested > merge conflict when there are more than 6 actionable own PRs. Skip any that share a repo with a candidate already accepted this slot (worktree collision — the sibling gets it next slot). Open a fresh envelope per accepted fixup PR, exactly as before; the change is that several may open in the same slot.
 
 **Linked-issue progress note (rule 4a).** After you push the fixup commit(s) for a Second Foundation PR, parse the PR body for `Fixes: #<n>` / `Fixes #<n>` / `Closes #<n>` (and the cross-repo `<owner>/<repo>#<n>` form). For every issue named there — plus, when the PR was opened out of a `triage/<n>-<slug>` branch, the numeric `<n>` in that branch name — post a short one-liner via `gh issue comment <n>` on that issue: what CI failure this slot addressed, the new head SHA, and a link back to the PR. Rule 13 disclosure block goes on top. This keeps the issue thread from looking abandoned across the multiple slots a PR usually takes to green up.
 
@@ -254,7 +254,7 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
     - **Project status says taken:** any `projectItems.nodes[]` has a Status field whose name (case-insensitive, strip trailing emoji/whitespace) is one of `In Progress`, `Under review`, `QA`, `QA OK` — someone has already pulled the issue into a working column on a project board.
 
     If every linked PR is closed/merged without the issue closing, that signal is clear. If project Status is `Todo`, `Icebox`, `Done`, missing, or absent entirely, that signal is clear too. Only skip when at least one of the two signals actually fires. In dry-run mode run the same query (reads are always on).
-7. Take up to N fresh tickets, where N is the remaining budget after in-flight envelopes and own-PR fixups are counted against the `roles.concurrency` (=6) cap. Walk the queue in the priority order above and accept a candidate only if its `<owner>/<repo>` is not already in this slot's accepted set (worktree dedupe — see the escalate-extras block above). Skipped duplicates stay in the queue for the next slot.
+7. Take up to N fresh tickets, where N is the remaining budget after in-flight envelopes and own-PR fixups are counted against the `roles.concurrency` cap from `config/config.yaml`. Walk the queue in the priority order above and accept a candidate only if its `<owner>/<repo>` is not already in this slot's accepted set (worktree dedupe — see the escalate-extras block above). Skipped duplicates stay in the queue for the next slot.
 
 Rule 11a comment-only chain semantics still apply per candidate — a zero-write iteration or comment-only iteration on any of the fanned-out candidates does NOT commit the slot for that candidate, and the manager may loop back to the pick step for that specific slot in the fanned-out set. The slot commits to the union of every candidate that produced real work.
 
@@ -282,7 +282,7 @@ For the ticket you picked:
    git -C workspace/<repo> fetch --prune origin
    ```
    Do NOT `reset --hard` / `clean -fdx` / `checkout` on `workspace/<repo>` itself: the slot works on a private worktree (4b), and another slot may already have branches checked out on it. The shared clone stays on the default branch, untouched.
-4b. **Per-ticket git worktree.** Every ticket in this slot's fanned-out set works in its own isolated checkout so the up-to-6 parallel workers do not stomp each other's branch state (and so two managers on overlapping repos in successive slots stay isolated too). Create it right before dispatching the worker for that ticket:
+4b. **Per-ticket git worktree.** Every ticket in this slot's fanned-out set works in its own isolated checkout so parallel workers (up to `roles.concurrency`) do not stomp each other's branch state (and so two managers on overlapping repos in successive slots stay isolated too). Create it right before dispatching the worker for that ticket:
    ```
    WT="$PWD/workspace/<repo>-slot<slot_seq>-<pr_or_issue_number>"   # absolute: `git -C` resolves a relative path inside workspace/<repo>/
    git -C workspace/<repo> worktree add --detach "$WT" upstream/<default_branch> \
@@ -298,7 +298,7 @@ For the ticket you picked:
    ```
    The pragma is persistent on the DB file, so this is a no-op on every slot after the first, but running it every time keeps a fresh clone from silently regressing to `delete` mode.
 
-   **HARD RULE: every multi-statement write to `workspace/.state/audit.sqlite` MUST be wrapped in `BEGIN IMMEDIATE; ... COMMIT;`.** With fan-out enabled, the manager writes several `events` / `costs` / `worker_reports` rows in quick succession as each of up to 6 subagents returns; without `BEGIN IMMEDIATE` around the batch, SQLite serializes them at statement granularity and readers or concurrent writers can trip `SQLITE_BUSY`. Concretely:
+   **HARD RULE: every multi-statement write to `workspace/.state/audit.sqlite` MUST be wrapped in `BEGIN IMMEDIATE; ... COMMIT;`.** With fan-out enabled, the manager writes several `events` / `costs` / `worker_reports` rows in quick succession as each parallel subagent returns; without `BEGIN IMMEDIATE` around the batch, SQLite serializes them at statement granularity and readers or concurrent writers can trip `SQLITE_BUSY`. Concretely:
    ```
    sqlite3 workspace/.state/audit.sqlite <<SQL
    BEGIN IMMEDIATE;
@@ -332,7 +332,7 @@ Re-run this collection at the start of every reviewer round — later rounds see
 
 ### Advance the state machine
 
-For each accepted ticket in this slot's set (up to 6), reload its envelope and prepare a dispatch. The role to spawn matches the ticket's current phase; the per-ticket worktree from 4b is passed in as the workspace path so each subagent operates on its own isolated checkout.
+For each accepted ticket in this slot's set (up to `roles.concurrency`), reload its envelope and prepare a dispatch. The role to spawn matches the ticket's current phase; the per-ticket worktree from 4b is passed in as the workspace path so each subagent operates on its own isolated checkout.
 
 **Parallel fan-out.** Fire ALL prepared dispatches in a SINGLE `Agent`-tool block — that is Claude Code's mechanism for parallel tool calls. One block with N `Agent` invocations (N ≤ 6) means the workers run concurrently; the block resolves when the last one returns, at which point the manager collects every worker's output. Do NOT loop and dispatch one at a time — that reverts to serial execution and defeats the fan-out. If N == 1 for this slot (only one candidate qualified), the block still holds exactly one call; the shape is uniform.
 

@@ -283,7 +283,7 @@ For the ticket you picked:
    Do NOT `reset --hard` / `clean -fdx` / `checkout` on `workspace/<repo>` itself: the slot works on a private worktree (4b), and another slot may already have branches checked out on it. The shared clone stays on the default branch, untouched.
 4b. **Per-ticket git worktree.** Every ticket in this slot's fanned-out set works in its own isolated checkout so the up-to-6 parallel workers do not stomp each other's branch state (and so two managers on overlapping repos in successive slots stay isolated too). Create it right before dispatching the worker for that ticket:
    ```
-   WT=workspace/<repo>-slot<slot_seq>-<pr_or_issue_number>
+   WT="$PWD/workspace/<repo>-slot<slot_seq>-<pr_or_issue_number>"   # absolute: `git -C` resolves a relative path inside workspace/<repo>/
    git -C workspace/<repo> worktree add --detach "$WT" upstream/<default_branch> \
      || git -C workspace/<repo> worktree add "$WT" upstream/<default_branch>
    git -C "$WT" reset --hard upstream/<default_branch>

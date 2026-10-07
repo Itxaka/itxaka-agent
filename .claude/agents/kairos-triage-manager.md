@@ -182,7 +182,13 @@ The board holds 500+ items and `item-list` silently stops at `--limit`, newest c
 4. **Nobody else on it.** Scan the last 20 comments on the card, and for an issue card the last 20 on each linked PR. Skip if a non-`agent.github_user` comment from the last 7 days matches (case-insensitive) `QA in progress`, `working on (the )?QA`, `doing (the )?QA`, `testing this`, `I'll QA`, `QA-ing`, or carries another agent's disclosure block that announces QA, and no later comment from that author says they are done.
 5. **Not dropped.** Skip if `workspace/.state/<owner>_<repo>/<n>/envelope.json` has `phase: dropped`.
 6. **Has a PR to test.** For an issue card, resolve its PR from `closedByPullRequestsReferences` (open first, else the merged one). No linked PR, skip: there is nothing to QA. For a PR card, read its linked issues from `closingIssuesReferences`; they are the reference.
-7. **We can QA it end to end.** Skip if verifying needs hardware or an environment we do not have (GPU, NVIDIA/Jetson, Raspberry Pi or other boards, a physical TPM, macOS, cloud-only bootloader or provider paths), or if you cannot tell from the issue and PR what to verify. The test has to be a VM boot of a build from the PR; if that cannot exercise the claim, skip.
+7. **The PR is QA-ready.** Check the PR found in step 6:
+   ```
+   gh pr view <pr> --repo <repo> --json mergeable,mergeStateStatus,headRefOid,statusCheckRollup
+   gh run list --repo <repo> --commit <headRefOid> --json workflowName,status,conclusion
+   ```
+   Skip if `mergeable == CONFLICTING`, or any check has concluded `FAILURE` / `TIMED_OUT` / `CANCELLED`, or checks are still running. If CI is waiting on authorization — the `authorize` check has no conclusion and a run sits `waiting`, or a run concluded `action_required` — and we have not already pinged at this head SHA, post on the PR (rule 13 block on top): `@Itxaka the CI for this PR is waiting on approval. Could you authorize the run so it can go through QA?` Then skip. Look for our earlier ping (same text, same head SHA mentioned or posted after the head commit date) before posting another. The ping is a comment-only action (rule 11a).
+8. **We can QA it end to end.** Skip if verifying needs hardware or an environment we do not have (GPU, NVIDIA/Jetson, Raspberry Pi or other boards, a physical TPM, macOS, cloud-only bootloader or provider paths), or if you cannot tell from the issue and PR what to verify. The test has to be a VM boot of a build from the PR; if that cannot exercise the claim, skip.
 
 If no card qualifies, fall through to the in-flight envelopes below. Do not open a slot row for an empty QA pass.
 

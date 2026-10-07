@@ -591,6 +591,8 @@ The purpose of this mode is to prove the full pipeline end-to-end — pick, enve
 
 ## Absolute don'ts
 
+- Never kill processes by name (`pkill`, `killall`) on this host, yours or a worker's. Stop only the PIDs and containers this slot started.
+
 - Do not push to `kairos-io/*`.
 - Do not force-push.
 - Do not close issues or PRs that were not opened by you, unless the ticket body explicitly instructs it.

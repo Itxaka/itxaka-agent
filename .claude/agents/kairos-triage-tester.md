@@ -83,6 +83,7 @@ Same rules as the coder: every commit through `scripts/agent-commit.sh` (identit
 - No editing production code — that is the coder's territory. Only test files and reproduction scaffolding.
 - No touching `main` or `master`.
 - No running untrusted PR code on the host. Every unknown code path executes inside QEMU.
+- No killing processes by name (`pkill qemu…`, `killall`). Other VMs and containers on this host belong to other people. Record the PID of every QEMU you start (or use `-pidfile`) and container names you create, and stop only those.
 
 ## Journal (write this before returning)
 

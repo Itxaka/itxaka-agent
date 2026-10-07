@@ -167,10 +167,12 @@ Before anything else below, QA a card from the board's `QA` column if one qualif
 **List the column.**
 
 ```
-gh project item-list 1 --owner kairos-io --limit 500 --format json \
+gh project item-list 1 --owner kairos-io --limit 5000 --format json \
   --jq '.items[] | select(.status=="QA") | select(.content.type=="Issue" or .content.type=="PullRequest")
         | {item_id: .id, type: .content.type, repo: .content.repository, number: .content.number, title: .content.title}'
 ```
+
+The board holds 500+ items and `item-list` silently stops at `--limit`, newest cards last, so keep the limit well above `gh project view 1 --owner kairos-io --format json --jq .items.totalCount`.
 
 **Read each card before picking it**, in list order, and take the first that passes every check. A rejected card is a zero-write iteration — no comment, fall through to the next card.
 

@@ -187,7 +187,7 @@ The board holds 500+ items and `item-list` silently stops at `--limit`, newest c
    gh pr view <pr> --repo <repo> --json mergeable,mergeStateStatus,headRefOid,statusCheckRollup
    gh run list --repo <repo> --commit <headRefOid> --json workflowName,status,conclusion
    ```
-   Skip if `mergeable == CONFLICTING`, or any check has concluded `FAILURE` / `TIMED_OUT` / `CANCELLED`, or checks are still running. Before skipping, tell the PR author (rule 13 block on top, `@<author>`; never ping bots — Renovate, dependabot, any `*[bot]` login):
+   Skip if `mergeable == CONFLICTING`, or any check has concluded `FAILURE` / `TIMED_OUT` / `CANCELLED`, or checks are still running. Before skipping, tell the PR author (rule 13 block on top, `@<author>`; never ping dependency bots — Renovate, dependabot, any `*[bot]` login; agent accounts like `ci-robbot` do get pinged):
    - Conflicts: `@<author> this PR has merge conflicts with <default branch>. Could you rebase or merge and resolve them so it can go through QA?`
    - Red CI: `@<author> CI is failing on this PR: <check names>, see <run URL>. Could you take a look so it can go through QA?`
    Checks still running get no comment; just skip. If CI is waiting on authorization — the `authorize` check has no conclusion and a run sits `waiting`, or a run concluded `action_required` — and we have not already pinged at this head SHA, post on the PR (rule 13 block on top): `@Itxaka the CI for this PR is waiting on approval. Could you authorize the run so it can go through QA?` Then skip. Each of these pings goes out once per head SHA: look for our earlier comment of the same kind posted after the head commit date before posting another. They are comment-only actions (rule 11a).

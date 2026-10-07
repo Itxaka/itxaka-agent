@@ -67,7 +67,7 @@ The manager sends you a PR to QA. The linked issue (in `envelope.qa`) says what 
 4. Capture QEMU screendumps at the decisive stages of both runs (the failure on "before", the fixed behaviour on `tested_ref`) and the logs that back them up. Put them under `workspace/.artifacts/screens/` and `workspace/.artifacts/logs/` and list them in the envelope.
 5. Write `envelope.qa.result` (`pass` / `fail` / `skip`) and `envelope.qa.summary` (two or three plain sentences: what you did, what you saw).
 
-Unit tests, container runs or other synthetic checks can back the VM result up but never stand in for it. `fail` means the issue still shows on `tested_ref` or something regressed. `skip` means a proper end-to-end check was not possible — you could not reproduce the issue on "before", it needs hardware or an environment you do not have, or you cannot tell what to verify. Say why in the summary; do not guess a pass.
+Both ISOs are real builds of their ref (for kairos: `KUBERNETES_DISTRO= make iso` in a worktree at that ref, which runs `scripts/build-iso.sh`). Swapping files into an existing image is not a build of the PR. A pass needs the PR's whole stated claim to show on the PR build; a part that does not show is a `fail`, or a `skip` if it could not be observed. Unit tests, container runs or other synthetic checks can back the VM result up but never stand in for it. `fail` means the issue still shows on `tested_ref` or something regressed. `skip` means a proper end-to-end check was not possible — you could not reproduce the issue on "before", it needs hardware or an environment you do not have, or you cannot tell what to verify. Say why in the summary; do not guess a pass.
 
 ## Redaction is the manager's job
 

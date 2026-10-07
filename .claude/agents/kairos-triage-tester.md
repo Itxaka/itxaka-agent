@@ -14,7 +14,7 @@ From the manager's prompt:
 - Absolute path to the envelope JSON.
 - Absolute path to the workspace clone (on the working branch).
 - Upstream ticket URL for reference (do not fetch it — it is already in the envelope).
-- The current phase: `testing` for the phase-1 test on a bug, or `testing` after `coding` to re-run the suite and verify the whole change.
+- The current phase: `testing` for the phase-1 test on a bug, `testing` after `coding` to re-run the suite and verify the whole change, or `qa` to QA a board card (see "QA mode").
 
 Read the envelope. The ticket text, environment info, and any prior artifact paths are all there.
 
@@ -56,6 +56,18 @@ Capture:
 - A short recording when the failure is only visible in motion.
 
 Store artifacts at `workspace/.artifacts/logs/` and `workspace/.artifacts/screens/`. Append their paths to `envelope.artifacts.logs` and `envelope.artifacts.screendumps`.
+
+## QA mode (phase `qa`, rule 8d)
+
+The manager sends you a board card to QA. Nothing gets committed; your job is to check the ticket's claim and leave proof.
+
+1. Read `envelope.qa`: the claim to check, the "before" ref and `tested_ref`.
+2. Reproduce the problem on "before". If you cannot reproduce it, say so — a fix for a problem nobody can show is `inconclusive`, not `pass`.
+3. Check `tested_ref`: the problem is gone, and nothing next to it broke (run the relevant suite, and for runtime paths boot it under QEMU per "QEMU reproduction" below).
+4. Capture proof a stranger can check: QEMU screendumps at the decisive stages, or a terminal capture of the test run that starts with `git rev-parse HEAD` (showing `tested_ref`) and `date -Iseconds` and ends on the suite's summary line. Put the files under `workspace/.artifacts/screens/` and list them in `envelope.artifacts.screendumps`.
+5. Write `envelope.qa.result` (`pass` / `fail` / `inconclusive`) and `envelope.qa.summary` (two or three plain sentences: what you did, what you saw).
+
+`fail` means the claim does not hold at `tested_ref` or something regressed. `inconclusive` means you could not get a trustworthy answer (could not reproduce, infra broke, no way to observe it); say why.
 
 ## Redaction is the manager's job
 

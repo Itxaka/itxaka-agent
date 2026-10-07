@@ -64,7 +64,7 @@ Every handoff carries this JSON envelope, persisted to `workspace/.state/<repo>/
 ```json
 {
   "ticket":  "kairos-io/kairos#1234",
-  "phase":   "coding | testing | docs | reviewing | manager-final | escalated | done",
+  "phase":   "qa | coding | testing | docs | reviewing | manager-final | escalated | done",
   "round":   0,
   "branch":  "triage/1234-short-slug",
   "artifacts": {

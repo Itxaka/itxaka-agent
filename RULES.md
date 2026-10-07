@@ -189,9 +189,34 @@ Fresh incoming PRs are cheap and constant (Renovate, ci-robbot), so the fixed ru
 
 Rung 3 only fires when rungs 1 and 2 are empty. A bug the agent could take is never skipped in favour of an enhancement. Within rung 3 the manager still gates on whether it can meaningfully act — a pure-discussion `epic` with no concrete deliverable, or a stalled `spike`, is walked past like a skip-labelled ticket (log the reason, move on). The action for a rung-3 pick is the normal issue flow: post a takeover comment, self-assign, spawn the coder/tester loop; the QEMU reproduction sub-flow only applies when `rules.yaml` sets `reproduce_in_qemu: true`, which the catch-all rule does not.
 
-## 8a. Own open PRs are top priority
+## 8d. QA of board cards is the top priority
 
-Any pull request the Second Foundation opened and has not yet seen merged or closed is checked at the start of every slot, ahead of the rule 8 pipeline. The check is cheap — one `gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open --json number,url,mergeable,reviewDecision,statusCheckRollup` per watched repo — and the manager only ACTS on a PR when at least one of these is true:
+Before anything else in a slot — before in-flight envelopes, own-PR fixups (rule 8a) and the rule 8 pipeline — the manager checks the **QA** column of the kairos-io org board (project 1) and, if a card there qualifies, spends the slot QA-ing it. One card per slot. An in-flight QA envelope (phase `qa`) resumes ahead of a fresh QA pick.
+
+**Which card.** Walk the cards whose Status is `QA` and take the first one that passes all of:
+
+- It is an Issue or a PullRequest on a repository (draft notes on the board are skipped).
+- It is not ours. Skip a card whose PR or issue `agent.github_user` opened, and skip an issue card whose fixing PR is ours — QA-ing our own work is the rubber stamp rule 3b.i forbids. Those wait for a human.
+- It is not already QA'd at its current head: no `QA: pass` / `QA: fail` label applied at the current head SHA (rule 3b cache).
+- Nobody else is on it. Read the card's comments (and, for an issue, the comments on its linked PR) before picking: an unresolved QA claim from another human or agent within the last 7 days — "QA in progress", "working on QA", "doing QA", "testing this", "I'll QA", or another agent's disclosure block announcing QA — means skip. A claim older than 7 days with no follow-up is stale (same threshold as rule 3c).
+- The operator has not dropped it (`envelope.json` with `phase: dropped` for that ticket).
+
+**Claim it.** Post a short comment on the card's ticket that QA is in progress (rule 13 disclosure block on top). Then re-read the comments: if another QA claim landed before ours, the earliest claim wins — edit ours to say we are leaving QA to them, and fall through to the next card. Claiming is a comment-only action (rule 11a); the slot commits once testing is dispatched.
+
+**Test what the card claims.** QA checks the ticket's own claim, not just CI. If it says it fixes X, reproduce X on a build without the change, then confirm X is gone on a build with it — the PR head for a PR card, or the merged fix on the default branch for an issue card. Runtime behaviour (boot, install, upgrade, reset, mounts) goes through QEMU per rule 3; code-level claims through the test suite. Untrusted code still only runs inside QEMU.
+
+**Report with proof.** Post a `QA verification` comment on the card's ticket (and on the linked issue or PR, rule 4a): what was tested, at which SHA, the result as a `QA: pass` / `QA: fail` line, and the proof — QEMU screenshots per rule 3a or a test-run screenshot per rule 14a, hosted on `itxaka-agent/triage-assets`. Then apply the matching label and move the card:
+
+- **Pass** → label `QA: pass`, move the card to `QA OK`.
+- **Fail** → label `QA: fail`, move the card to `Under review`.
+
+Rule 3b.ii still gates both: no third-party-inspectable proof, no label and no move — the comment says the QA was inconclusive and why, and the card stays in `QA`. When the repo has no `QA:` labels (rule 3b), the result line in the comment stands in for the label and the move still happens.
+
+QA slots do not count toward the rule 8c quota.
+
+## 8a. Own open PRs come right after QA
+
+Any pull request the Second Foundation opened and has not yet seen merged or closed is checked at the start of every slot, after the QA pick (rule 8d) and ahead of the rule 8 pipeline. The check is cheap — one `gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open --json number,url,mergeable,reviewDecision,statusCheckRollup` per watched repo — and the manager only ACTS on a PR when at least one of these is true:
 
 - **CI is red.** Any status-check leaf on the rollup is `FAILURE` or `TIMED_OUT`. Fix forward: dispatch the coder / tester to address the failure, commit, push, `git push origin <branch>`. Do not force-push.
 - **A reviewer requested changes.** `reviewDecision == 'CHANGES_REQUESTED'`, or the PR has new comments on the branch since the Second Foundation's last commit that name a file/line change. Dispatch the coder to address them, commit, push.
@@ -347,12 +372,14 @@ Self-assignment plus the initial disclosure comment (rule 4) are the visibility 
 - A PR the agent is reviewing (own-PR fixup or third-party review). Reviewers show up in the PR's `reviewRequests`/`reviews`, not `assignees` — self-assigning as reviewer confuses the assignee semantics maintainers use.
 - Any ticket where someone else is already assigned (rule 5 handles the skip; the self-assignment carve-out only applies when the sole assignee is the ticket author).
 
-The agent does not create, apply, or remove repository labels. GitHub Project (v2) status columns are also off-limits, with TWO exceptions, both landing the PR in the "QA" column of the kairos-io org QA board (project 1) — the ready-for-QA column a human on the QA rotation picks work out of:
+The agent does not create, apply, or remove repository labels, except the `QA: pass` / `QA: fail` labels rule 3b and rule 8d allow. GitHub Project (v2) status columns are also off-limits, with these exceptions on the kairos-io org QA board (project 1). Two land a PR in the "QA" column — the ready-for-QA column QA work is picked out of:
 
 - **Own new PR.** Whenever the agent opens a new PR of its own (`gh pr create`, not a fixup push), it MUST add that PR to the board and set its Status field to "QA". Skip for fixup pushes and drafts.
 - **Approved third-party PR.** Whenever the agent posts an approving review on someone else's PR (`gh pr review --approve`), it MUST add that PR to the board and set its Status field to "QA". Only on approve — never on `changes-requested` or comment-only reviews. If the PR already sits in `QA`, `QA OK`, or `Done` on the board, leave it where it is.
 
-The exact `gh project item-add` + `gh project item-edit` calls, project id, field id, and QA option id are in the manager's "Finalize" step 2a; the third-party approve path in the manager's "Third-party PRs" section reuses them. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
+- **QA result (rule 8d).** After QA-ing a card, the agent moves it from `QA` to `QA OK` on a pass, or to `Under review` on a fail.
+
+The exact `gh project item-add` + `gh project item-edit` calls, project id, field id, and QA option id are in the manager's "Finalize" step 2a; the QA result moves are in the manager's "QA first" section; the third-party approve path in the manager's "Third-party PRs" section reuses them. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
 
 ## 12b. Skip a resumed review when nothing changed
 

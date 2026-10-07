@@ -200,17 +200,19 @@ Before anything else in a slot — before in-flight envelopes, own-PR fixups (ru
 - It is not already QA'd at its current head: no `QA: pass` / `QA: fail` label applied at the current head SHA (rule 3b cache).
 - Nobody else is on it. Read the card's comments (and, for an issue, the comments on its linked PR) before picking: an unresolved QA claim from another human or agent within the last 7 days — "QA in progress", "working on QA", "doing QA", "testing this", "I'll QA", or another agent's disclosure block announcing QA — means skip. A claim older than 7 days with no follow-up is stale (same threshold as rule 3c).
 - The operator has not dropped it (`envelope.json` with `phase: dropped` for that ticket).
+- There is a PR to test. The issue is only the reference for what to verify; the PR is what gets QA'd. An issue card with no linked PR has nothing to QA and is skipped.
+- We can QA it properly, end to end. Skip anything that needs hardware or an environment we do not have (GPU, NVIDIA/Jetson, Raspberry Pi or other boards, a physical TPM, macOS, cloud-only paths), and anything where we cannot work out what to verify. A skipped card gets no claim and no comment.
 
 **Claim it.** Post a short comment on the card's ticket that QA is in progress (rule 13 disclosure block on top). Then re-read the comments: if another QA claim landed before ours, the earliest claim wins — edit ours to say we are leaving QA to them, and fall through to the next card. Claiming is a comment-only action (rule 11a); the slot commits once testing is dispatched.
 
-**Test what the card claims.** QA checks the ticket's own claim, not just CI. If it says it fixes X, reproduce X on a build without the change, then confirm X is gone on a build with it — the PR head for a PR card, or the merged fix on the default branch for an issue card. Runtime behaviour (boot, install, upgrade, reset, mounts) goes through QEMU per rule 3; code-level claims through the test suite. Untrusted code still only runs inside QEMU.
+**Test the PR, end to end.** The linked issue says what to verify; the PR is what is tested — the PR head, or its merge commit once merged. Build an ISO from it, boot it under QEMU, reproduce the issue on a build without the change, and confirm it is gone on the PR build. Unit tests, container approximations and other synthetic checks can back that up but never replace it: if an end-to-end check in a VM is not possible, the card is skipped (or, when that only shows up after the claim, the claim is edited to say we are leaving QA to someone else, with no label and no move). Untrusted code only runs inside QEMU.
 
-**Report with proof.** Post a `QA verification` comment on the card's ticket (and on the linked issue or PR, rule 4a): what was tested, at which SHA, the result as a `QA: pass` / `QA: fail` line, and the proof — QEMU screenshots per rule 3a or a test-run screenshot per rule 14a, hosted on `itxaka-agent/triage-assets`. Then apply the matching label and move the card:
+**Report with proof.** The issue is where the proof lives. Post the full `QA verification` comment on the issue: what was tested, the PR and the SHA, the result as a `QA: pass` / `QA: fail` line, and the proof — QEMU screenshots per rule 3a, hosted on `itxaka-agent/triage-assets`. On the PR, post a short comment linking to that issue comment. When the PR fixes no issue, the full comment goes on the PR. Then label both the issue and the PR, and move whichever of them sits in the `QA` column:
 
-- **Pass** → label `QA: pass`, move the card to `QA OK`.
-- **Fail** → label `QA: fail`, move the card to `Under review`.
+- **Pass** → label `QA: pass`, move to `QA OK`.
+- **Fail** → label `QA: fail`, move to `Under review`.
 
-Rule 3b.ii still gates both: no third-party-inspectable proof, no label and no move — the comment says the QA was inconclusive and why, and the card stays in `QA`. When the repo has no `QA:` labels (rule 3b), the result line in the comment stands in for the label and the move still happens.
+Rule 3b.ii still gates both: no third-party-inspectable proof, no label and no move. When the repo has no `QA:` labels (rule 3b), the result line in the comment stands in for the label and the move still happens.
 
 QA slots do not count toward the rule 8c quota.
 

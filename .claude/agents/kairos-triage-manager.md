@@ -181,6 +181,8 @@ The board holds 500+ items and `item-list` silently stops at `--limit`, newest c
 3. **Not already QA'd.** Skip if a `QA: pass` or `QA: fail` label is present and a `QA verification` comment records the current head SHA. A stale label (head moved since) does not block; it gets replaced at report time.
 4. **Nobody else on it.** Scan the last 20 comments on the card, and for an issue card the last 20 on each linked PR. Skip if a non-`agent.github_user` comment from the last 7 days matches (case-insensitive) `QA in progress`, `working on (the )?QA`, `doing (the )?QA`, `testing this`, `I'll QA`, `QA-ing`, or carries another agent's disclosure block that announces QA, and no later comment from that author says they are done.
 5. **Not dropped.** Skip if `workspace/.state/<owner>_<repo>/<n>/envelope.json` has `phase: dropped`.
+6. **Has a PR to test.** For an issue card, resolve its PR from `closedByPullRequestsReferences` (open first, else the merged one). No linked PR, skip: there is nothing to QA. For a PR card, read its linked issues from `closingIssuesReferences`; they are the reference.
+7. **We can QA it end to end.** Skip if verifying needs hardware or an environment we do not have (GPU, NVIDIA/Jetson, Raspberry Pi or other boards, a physical TPM, macOS, cloud-only bootloader or provider paths), or if you cannot tell from the issue and PR what to verify. The test has to be a VM boot of a build from the PR; if that cannot exercise the claim, skip.
 
 If no card qualifies, fall through to the in-flight envelopes below. Do not open a slot row for an empty QA pass.
 
@@ -196,14 +198,17 @@ QA in progress: I'm testing this now. Results and proof will follow here."
 
 **Dispatch.** Work out what to test and write it into the envelope before calling the tester:
 
-- PR card: the claim is the PR body and its linked issues; `tested_ref` is the PR head SHA (`headRefOid`). The "before" build is the merge base on the default branch.
-- Issue card: the claim is the issue's problem statement; `tested_ref` is the merge commit of the PR that closed it (or the default-branch head if it was fixed without a PR). The "before" build is the parent of that merge commit.
+- What to verify comes from the issue (the reference); for a PR with no linked issue, from the PR body.
+- What is tested is always the PR: `tested_ref` is its head SHA (`headRefOid`) while open, or its merge commit once merged. The "before" build is the merge base on the default branch (or the merge commit's parent).
+- Record `envelope.qa.issue` and `envelope.qa.pr` (numbers, repo, and the board `item_id` of each that is on the board).
 
-Create the per-ticket worktree (rule 7a), then dispatch `kairos-triage-tester` with phase `qa`. It reproduces the problem on "before", confirms it is gone on `tested_ref` (QEMU for runtime paths per rule 3, the test suite otherwise), and writes `envelope.qa.result` (`pass` / `fail` / `inconclusive`), `envelope.qa.summary`, and its artifacts. Record `dispatch`/`return` events, `costs` and `worker_reports` as for any other role.
+Create the per-ticket worktree (rule 7a), then dispatch `kairos-triage-tester` with phase `qa`. It builds an ISO for "before" and for `tested_ref`, boots both under QEMU, reproduces the problem on "before" and confirms it is gone on `tested_ref`. Synthetic checks (unit tests, containers) may back that up but never replace it. It writes `envelope.qa.result` (`pass` / `fail` / `skip`), `envelope.qa.summary`, and its artifacts. Record `dispatch`/`return` events, `costs` and `worker_reports` as for any other role.
 
-**Report.** Upload the tester's screenshots to `itxaka-agent/triage-assets` under `<owner>/<n>/qa-<name>.<ext>` (rule 3a/14a conventions; terminal captures carry `git rev-parse HEAD` of `tested_ref` and `date -Iseconds`). Post a `QA verification` comment on the card's ticket, and the same on the linked issue/PR (rule 4a). Keep it short (rule 9a.iii): what was tested, `tested_ref`, `QA: pass` / `QA: fail` / inconclusive, why, and the embedded proof.
+**Skip result.** If the tester returns `skip` (no end-to-end check was possible after all), edit the claim comment to say we are leaving QA on this to someone else and why, in one line. No label, no move. Set the envelope to `done` with `envelope.qa.result = skip` and close the slot.
 
-Then, only if the comment carries third-party-inspectable proof (rule 3b.ii):
+**Report.** Upload the tester's screenshots to `itxaka-agent/triage-assets` under `<owner>/<issue-or-pr n>/qa-<name>.<ext>` (rule 3a conventions). Post the full `QA verification` comment on the **issue**: what was tested (PR number and `tested_ref`), `QA: pass` / `QA: fail`, why, and the embedded proof. Keep it short (rule 9a.iii). On the **PR**, post a one-liner linking to that issue comment, e.g. `QA: pass at <sha>, details and proof: <issue comment URL>`. If the PR has no linked issue, the full comment goes on the PR. Both comments carry the rule 13 block.
+
+Then, only if the comment carries third-party-inspectable proof (rule 3b.ii), label **both** the issue and the PR, and move **each of them that is on the board in the `QA` column**:
 
 ```
 # label: remove a stale opposite/old label first if present
@@ -217,7 +222,7 @@ gh project item-edit --project-id PVT_kwDOBrVfSM4AGI3D --id <item_id> \
   --field-id PVTSSF_lADOBrVfSM4AGI3DzgDia1k --single-select-option-id 73ee4854
 ```
 
-(`gh pr edit` for a PR card; `gh issue edit` also works on PR numbers.) When the repo has no `QA:` labels, skip the label and note it in the audit summary; still move the card. An `inconclusive` result gets the comment only — no label, no move, card stays in `QA`. Insert an `events` row with `action='qa_verdict'` and `note=<result>`, set the envelope to `done`, and close the slot. `progress_note` names the card and the outcome, e.g. `"QA'd #5095: the FIPS leg no longer rebuilds the kernel. Passed, moved to QA OK."`.
+(`gh issue edit` works on PR numbers too.) When the repo has no `QA:` labels, skip the label and note it in the audit summary; still move the card. Confirm every move with `gh issue view <n> --json projectItems`. Insert an `events` row with `action='qa_verdict'` and `note=<result>`, set the envelope to `done`, and close the slot. `progress_note` names the card and the outcome, e.g. `"QA'd #5095: the FIPS leg no longer rebuilds the kernel. Passed, moved to QA OK."`.
 
 #### In-flight envelopes
 

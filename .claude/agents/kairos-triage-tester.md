@@ -14,7 +14,7 @@ From the manager's prompt:
 - Absolute path to the envelope JSON.
 - Absolute path to the workspace clone (on the working branch).
 - Upstream ticket URL for reference (do not fetch it — it is already in the envelope).
-- The current phase: `testing` for the phase-1 test on a bug, `testing` after `coding` to re-run the suite and verify the whole change, or `qa` to QA a board card (see "QA mode").
+- The current phase: `testing` for the phase-1 test on a bug, `testing` after `coding` to re-run the suite and verify the whole change, or `qa` to QA a PR from the board (see "QA mode").
 
 Read the envelope. The ticket text, environment info, and any prior artifact paths are all there.
 
@@ -59,15 +59,15 @@ Store artifacts at `workspace/.artifacts/logs/` and `workspace/.artifacts/screen
 
 ## QA mode (phase `qa`, rule 8d)
 
-The manager sends you a board card to QA. Nothing gets committed; your job is to check the ticket's claim and leave proof.
+The manager sends you a PR to QA. The linked issue (in `envelope.qa`) says what to verify; the PR at `tested_ref` is what you test. Nothing gets committed; your job is to check the claim end to end and leave proof.
 
-1. Read `envelope.qa`: the claim to check, the "before" ref and `tested_ref`.
-2. Reproduce the problem on "before". If you cannot reproduce it, say so — a fix for a problem nobody can show is `inconclusive`, not `pass`.
-3. Check `tested_ref`: the problem is gone, and nothing next to it broke (run the relevant suite, and for runtime paths boot it under QEMU per "QEMU reproduction" below).
-4. Capture proof a stranger can check: QEMU screendumps at the decisive stages, or a terminal capture of the test run that starts with `git rev-parse HEAD` (showing `tested_ref`) and `date -Iseconds` and ends on the suite's summary line. Put the files under `workspace/.artifacts/screens/` and list them in `envelope.artifacts.screendumps`.
-5. Write `envelope.qa.result` (`pass` / `fail` / `inconclusive`) and `envelope.qa.summary` (two or three plain sentences: what you did, what you saw).
+1. Read `envelope.qa`: the issue (reference), the PR, the "before" ref and `tested_ref`.
+2. Build an ISO from "before" and boot it under QEMU (see "QEMU reproduction" below). Reproduce the issue.
+3. Build an ISO from `tested_ref`, boot it, and confirm the issue is gone and nothing next to it broke.
+4. Capture QEMU screendumps at the decisive stages of both runs (the failure on "before", the fixed behaviour on `tested_ref`) and the logs that back them up. Put them under `workspace/.artifacts/screens/` and `workspace/.artifacts/logs/` and list them in the envelope.
+5. Write `envelope.qa.result` (`pass` / `fail` / `skip`) and `envelope.qa.summary` (two or three plain sentences: what you did, what you saw).
 
-`fail` means the claim does not hold at `tested_ref` or something regressed. `inconclusive` means you could not get a trustworthy answer (could not reproduce, infra broke, no way to observe it); say why.
+Unit tests, container runs or other synthetic checks can back the VM result up but never stand in for it. `fail` means the issue still shows on `tested_ref` or something regressed. `skip` means a proper end-to-end check was not possible — you could not reproduce the issue on "before", it needs hardware or an environment you do not have, or you cannot tell what to verify. Say why in the summary; do not guess a pass.
 
 ## Redaction is the manager's job
 

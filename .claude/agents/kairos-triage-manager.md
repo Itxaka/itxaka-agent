@@ -217,7 +217,7 @@ Create the per-ticket worktree (rule 7a), then dispatch `kairos-triage-tester` w
 
 **Report.** Upload the tester's screenshots to `itxaka-agent/triage-assets` under `<owner>/<issue-or-pr n>/qa-<name>.<ext>` (rule 3a conventions). Post the full `QA verification` comment on the **issue**: what was tested (PR number and `tested_ref`), `QA: pass` / `QA: fail`, why, and the embedded proof. Keep it short (rule 9a.iii). On the **PR**, post a one-liner linking to that issue comment, e.g. `QA: pass at <sha>, details and proof: <issue comment URL>`. If the PR has no linked issue, the full comment goes on the PR. Both comments carry the rule 13 block.
 
-Then, only if the comment carries third-party-inspectable proof (rule 3b.ii), label **both** the issue and the PR, and move **each of them that is on the board in the `QA` column**:
+Then, only if the comment carries third-party-inspectable proof (rule 3b.ii), label **both** the issue and the PR, and move **both** on the board from whatever column they are in (`gh project item-add 1 --owner kairos-io --url <url> --format json --jq .id` returns the item id, adding it first if it is not on the board). `QA: pass` always ends in `QA OK`:
 
 ```
 # label: remove a stale opposite/old label first if present

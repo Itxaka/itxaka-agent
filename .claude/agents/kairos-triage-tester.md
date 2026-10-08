@@ -47,7 +47,7 @@ When the ticket touches boot, install, upgrade, reset, or any runtime path exerc
 - `testing-kairos-installer-with-hadron` — for installer issues, Hadron ISOs.
 - `driving-qemu-vms` — the generic QEMU driver when neither of the above fits.
 
-Build ISOs with `auroraboot`. Cache them at `workspace/.artifacts/`. There is no limit on how many you may build — the disk grows and a human cleans it up out of band (rule 9). Every ISO you build records the exact command in the envelope.
+Build ISOs with `auroraboot`. Cache them at `workspace/.artifacts/`. There is no limit on how many you may build, but clean up after yourself (rule 9): once the manager has your proof, delete the ISOs, qcow2 disks and PPM screendumps you created and `docker rmi` the `kairos-local/*` images you built. Keep the PNG/log proof. Never prune Docker globally. Every ISO you build records the exact command in the envelope.
 
 Capture:
 

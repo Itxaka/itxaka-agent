@@ -251,7 +251,7 @@ To review a PR the agent must:
 - Pull the branch locally into the workspace.
 - When the change touches boot, install, upgrade, reset, or any code path exercised at runtime on a Kairos node, build an ISO from the branch and boot it under QEMU to verify the change behaves as claimed.
 
-Local ISO builds are unbounded — the agent may build as many as it needs to be confident in the review. Cache under `workspace/.artifacts` grows accordingly; a human cleans it up out of band.
+Local ISO builds are unbounded — the agent may build as many as it needs to be confident in the review. Each run cleans up after itself, though: once its proof (PNGs, logs) is uploaded, it deletes the ISOs, qcow2 disks and PPM screendumps it created and `docker rmi`s the `kairos-local/*` images it built. It only removes what it created itself and never prunes Docker globally. (The operator's disk filled up on 2026-10-08 when artifacts were left to pile up.)
 
 Review comments state what was verified, how (commands, VM config, observed output), and any concerns. "Looks good" without evidence is not acceptable.
 

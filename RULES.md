@@ -119,6 +119,10 @@ Every PR the Second Foundation opens which closes one or more issues includes a 
 
 Applies at PR-open time and at every PR-body edit. If the resolved-issue set changes mid-flight (a new duplicate is discovered, a wrongly-attributed one is dropped), edit the PR body to match.
 
+## 4c. Recheck the issue before opening a PR
+
+Someone else may fix the issue while our envelope is in flight, especially when it resumes in a later session. Right before pushing and opening the PR, the manager re-reads the issue and looks for PRs referencing it (in any repo the fix could land in) that were created after intake. If the issue is closed, or another author has an open or merged PR for it, the envelope is dropped as superseded: no push, no PR, no upstream comment. (kairos#5471: our AuroraBoot#950 opened 13 minutes after ci-robbot's #949 merged, and had to be closed as a duplicate.)
+
 ## 5. Do not touch tickets already assigned to a human
 
 If an issue or PR already has an assignee that is not the agent's own account, the agent leaves it alone — no comments, no takeover, no "helpful" suggestions. The only exception is when the assignee explicitly `@mentions` the agent asking for help.

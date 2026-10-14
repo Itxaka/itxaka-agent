@@ -83,6 +83,8 @@ A `QA: pass` or `QA: fail` label MUST NOT be applied unless the same PR/issue al
 
 "I tested it locally" text with no artifact is not proof. If no such artifact exists, do not label — record the outcome in the comment only and skip the label. The label is a cache entry other people rely on; it must never outrun the evidence.
 
+Anything that looks like a credential is redacted before it is posted or uploaded, even when it is a fake or test value made up for the QA run: API keys, tokens (`network_token`, k3s join tokens, `?token=` query strings), passwords, private keys. Replace the value with `<redacted>` in comments and log excerpts, and keep screenshots that show one off the asset repo; quote the redacted log line instead. The proof still has to show the claim (for example `token=<redacted>` before vs `token=REDACTED` after). This needs no operator sign-off. If a redacted post is still refused by the permission system, stop and report it.
+
 ## 3c. Check for a stated owner before taking a ticket
 
 Before opening a takeover comment on any issue or PR, the agent MUST read the comment thread and check whether a human or another agent has already stated they are working on it. If the most recent claim is unresolved — the author has not said they are done, and no PR closing the issue has merged — treat the ticket as `assigned_to_other` under rule 5 and skip it, even when the GitHub `assignees` field is empty.

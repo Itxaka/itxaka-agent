@@ -195,9 +195,20 @@ Fresh incoming PRs are cheap and constant (Renovate, ci-robbot), so the fixed ru
 
 Rung 3 only fires when rungs 1 and 2 are empty. A bug the agent could take is never skipped in favour of an enhancement. Within rung 3 the manager still gates on whether it can meaningfully act — a pure-discussion `epic` with no concrete deliverable, or a stalled `spike`, is walked past like a skip-labelled ticket (log the reason, move on). The action for a rung-3 pick is the normal issue flow: post a takeover comment, self-assign, spawn the coder/tester loop; the QEMU reproduction sub-flow only applies when `rules.yaml` sets `reproduce_in_qemu: true`, which the catch-all rule does not.
 
+## 8e. Re-review requests come first
+
+A maintainer asking us to look again is a direct request, so it goes ahead of everything else in the slot, the QA pick included. At slot start, list the open PRs in the configured repos where any of these holds:
+
+- `agent.github_user` is in the PR's `requested_reviewers` (REST `gh api repos/<o>/<r>/pulls/<n>` → `.requested_reviewers[].login`, or a search for `review-requested:<agent.github_user>`).
+- The timeline has a `review_requested` event for `agent.github_user` newer than our last review.
+- A comment or review newer than our last review `@`-mentions `agent.github_user`.
+- Someone replied in one of our inline review threads (`gh api repos/<o>/<r>/pulls/<n>/comments`, `in_reply_to_id` pointing at one of our comments) after our last review.
+
+For each hit, run a fresh reviewer round at the current head (`round++`, regenerate `pre_review`), read every reply on our threads, and post the new verdict: approve if our points are addressed, otherwise keep changes-requested and say what is still open. Posting the review clears the request. Take the oldest request first; one per slot, then carry on with rule 8d. A PR that is ours is not reviewed by us; answer the mention instead.
+
 ## 8d. QA of board cards is the top priority
 
-Before anything else in a slot — before in-flight envelopes, own-PR fixups (rule 8a) and the rule 8 pipeline — the manager checks the **QA** column of the kairos-io org board (project 1) and, if a card there qualifies, spends the slot QA-ing it. One card per slot. An in-flight QA envelope (phase `qa`) resumes ahead of a fresh QA pick.
+Before anything else in a slot except rule 8e re-review requests — before in-flight envelopes, own-PR fixups (rule 8a) and the rule 8 pipeline — the manager checks the **QA** column of the kairos-io org board (project 1) and, if a card there qualifies, spends the slot QA-ing it. One card per slot. An in-flight QA envelope (phase `qa`) resumes ahead of a fresh QA pick.
 
 **Which card.** Walk the cards whose Status is `QA` and take the first one that passes all of:
 
@@ -395,9 +406,12 @@ The exact `gh project item-add` + `gh project item-edit` calls, project id, fiel
 An `awaiting-author` envelope is not automatically work. Before treating one as in-flight for the current slot, the manager re-polls the PR and compares against the envelope's `meta.last_seen`:
 
 - **`headRefOid` unchanged** since our last recorded value, AND
-- **No comments or reviews from anyone other than the Second Foundation** after our last posted comment.
+- **No comments or reviews from anyone other than the Second Foundation** after our last posted comment. This includes replies inside our inline review threads (`pulls/<n>/comments`), which `gh pr view --comments` does not show, AND
+- **No pending review request** for `agent.github_user` (rule 8e).
 
-If both hold, the envelope is dormant — silently update `meta.last_seen.checked_at` (so the dashboard shows "last checked at X"), do NOT open a slot row, do NOT count as work, and continue to the next queue item (own-PR check or rule 8 pipeline). Repeat visits from cron cost only the cheap `gh pr view` fetch, not a full slot.
+Compare `headRefOid` against the commit our last review was posted on (`reviews[].commit_id`), not only against the envelope, so a push the envelope missed still counts.
+
+If all of these hold, the envelope is dormant — silently update `meta.last_seen.checked_at` (so the dashboard shows "last checked at X"), do NOT open a slot row, do NOT count as work, and continue to the next queue item (own-PR check or rule 8 pipeline). Repeat visits from cron cost only the cheap `gh pr view` fetch, not a full slot.
 
 When either signal changes, resume normally: new commits mean regenerate `pre_review` and dispatch the reviewer with `round++`; new comments mean read the thread and decide whether the round needs a fresh verdict.
 

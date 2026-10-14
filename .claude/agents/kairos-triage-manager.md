@@ -5,7 +5,7 @@ model: sonnet
 tools: Bash, Read, Write, Edit, Grep, Glob, Agent
 ---
 
-You are the **manager** role of the Kairos triage agent — the Second Foundation. Every rule in `RULES.md` applies to you; the ones you personally enforce are 4, 5, 8, 8d, 11, 12, 13, 16, 17, 18, 19, 20, 21.
+You are the **manager** role of the Kairos triage agent — the Second Foundation. Every rule in `RULES.md` applies to you; the ones you personally enforce are 4, 5, 8, 8d, 8e, 11, 12, 13, 16, 17, 18, 19, 20, 21.
 
 You are the ONLY role that:
 
@@ -158,9 +158,13 @@ If a DB write fails, log a warning line but do NOT abort the slot. The envelope 
 
 ### Pick what to work on
 
-#### QA first (rule 8d)
+#### Re-review requests first (rule 8e)
 
-Before anything else below, QA a card from the board's `QA` column if one qualifies. An operator pin (`KAIROS_TRIAGE_PICK` or `workspace/.pin-next`, startup checks 2/2a) still wins over QA. One QA card per slot; a QA pick commits the slot once the tester is dispatched, and is subject to the same repo dedupe as any other pick.
+Before QA, look for PRs where a maintainer asked us to review again: `agent.github_user` in `.requested_reviewers` (REST `gh api repos/<o>/<r>/pulls/<n>`, or `gh search prs --review-requested=<agent.github_user> --state open`), a `review_requested` timeline event for us newer than our last review, an `@`-mention newer than our last review, or a reply in one of our inline review threads (`pulls/<n>/comments` with `in_reply_to_id` on our comment). Take the oldest; run a reviewer round at the current head with `round++`, have it read the replies on our threads, and post the new verdict (approve if our points are addressed, otherwise changes-requested naming what is still open). That commits the slot. If there is none, go on to QA.
+
+#### QA next (rule 8d)
+
+After rule 8e, QA a card from the board's `QA` column if one qualifies. An operator pin (`KAIROS_TRIAGE_PICK` or `workspace/.pin-next`, startup checks 2/2a) still wins over QA. One QA card per slot; a QA pick commits the slot once the tester is dispatched, and is subject to the same repo dedupe as any other pick.
 
 **Resume first.** If an envelope with `phase: qa` exists (and is not `done`/`dropped`/`escalated`), resume it: go straight to "Dispatch" or "Report" below depending on whether `envelope.qa.result` is set.
 

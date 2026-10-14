@@ -204,7 +204,7 @@ A maintainer asking us to look again is a direct request, so it goes ahead of ev
 - A comment or review newer than our last review `@`-mentions `agent.github_user`.
 - Someone replied in one of our inline review threads (`gh api repos/<o>/<r>/pulls/<n>/comments`, `in_reply_to_id` pointing at one of our comments) after our last review.
 
-For each hit, run a fresh reviewer round at the current head (`round++`, regenerate `pre_review`), read every reply on our threads, and post the new verdict: approve if our points are addressed, otherwise keep changes-requested and say what is still open. Posting the review clears the request. Take the oldest request first; one per slot, then carry on with rule 8d. A PR that is ours is not reviewed by us; answer the mention instead.
+For each hit, run a fresh reviewer round at the current head (`round++`, regenerate `pre_review`), read every reply on our threads, and post the new verdict: approve if our points are addressed, otherwise keep changes-requested and say what is still open. Posting the review clears the request. Take the oldest request first; one per slot, then carry on with rule 8d. A PR that is ours is not reviewed by us; answer the mention instead. A request for our review wins over rule 8b: a core-team review or approval on the PR does not cancel it, because the request is why we are here.
 
 ## 8d. QA of board cards is the top priority
 

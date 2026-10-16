@@ -174,26 +174,43 @@ sqlite3 workspace/.state/audit.sqlite \
 
 **HARD RULE:** every multi-statement write from the manager MUST wrap in a short `BEGIN IMMEDIATE`/`COMMIT` transaction. With fan-out (`roles.concurrency: 6`) the manager writes a batch of per-ticket `events` / `costs` / `worker_reports` rows as each of up to 6 subagents returns; without the wrapper the batch trips `SQLITE_BUSY` under overlap even with WAL on. Long-lived write transactions are equally bad — keep the block short (open, insert, commit). Single-statement writes (one INSERT, one UPDATE) do not need the wrapper.
 
-## 8. PR review comes before issue triage
+## 8. Build work comes before QA and reviews
 
-Each cycle the agent processes work in this fixed order:
+The agent's value is the PRs it opens. Reviews and QA are cheap and there is always more of them (Renovate, ci-robbot, mauro-agent), so left alone they fill every slot and the agent ships nothing. Each slot therefore runs in this order:
 
-1. Open pull requests on `kairos-io/kairos` and `kairos-io/auroraboot` that are missing a review from the agent (or from any reviewer, depending on `config/rules.yaml`).
-2. Only when no PR is waiting on review does the agent move on to open issues on `kairos-io/kairos`.
+1. Re-review requests (rule 8e). A maintainer is waiting on us; one per slot.
+2. The rule 8c turn decides what comes next:
+   - **Build turn** (the default): own open PRs that need a fix (rule 8a), then in-flight build envelopes, then a fresh build pick: an issue (rule 8c ladder), then self-sourced work (rule 8f). Only when none of these has anything does the slot fall through to QA (rule 8d) and then PR review.
+   - **Review turn** (every few build slots, rule 8c): QA (rule 8d), then PR review of open pull requests on the watched repos that are missing a review from the agent (subject to `config/rules.yaml` and rule 8b). If neither has anything, the slot falls through to the build order above.
 
-Reviews are the higher-priority workload because a stalled PR blocks a real contributor.
+Build work means anything that ends in a commit on our own branch: an own-PR fixup, an issue fix, or a rule 8f fix.
 
-## 8c. Anti-starvation quota for issue triage
+## 8c. Build turns and review turns
 
-Fresh incoming PRs are cheap and constant (Renovate, ci-robbot), so the fixed rule 8 order (PRs first) can drain issue triage to zero — the agent ends up reviewing forever and never opening its own PR from an issue. To fix this, `config.pipeline.reviews_per_issue_check` (default 5) sets a quota. Every N consecutive slot commits on PRs, the next fresh-pick slot flips the pipeline order and tries `triage_issues` first. The counter resets whenever a slot commits on an issue. Set to 0 to disable and restore the original strict PR-first behaviour. Own-PR fixups and dormant zero-write iterations (rule 11a) do not count toward the quota — only slot-committing picks against fresh tickets do.
+`config.pipeline.builds_per_review_slot` (default 2) sets the ratio. Count the finished slots that committed on build work since the last finished slot that committed on QA or on a review of someone else's PR. While that count is below the setting, the slot is a build turn; once it reaches it, the slot is a review turn, and the review commit resets the count. So with the default, two of every three committed slots go to build work, and QA and reviews still get every third slot. When a build turn finds no build work, it falls back to QA and review that slot; never idle to preserve the ratio. Rule 8e re-review requests sit outside the ratio: they always go first, whatever the turn.
 
-**Label priority within `triage_issues`.** The stage is not scoped to `bug`. It walks the whole open-issue queue on `kairos-io/kairos` in this order and takes the first ticket that passes `config/rules.yaml`:
+`0` turns the ratio off and makes every slot a build turn. QA and reviews then only run when there is no build work at all.
+
+**Label priority within `triage_issues`.** The stage is not scoped to `bug`. It walks the whole open-issue queue on every repository with `watch.issues: true` in `config/config.yaml` (repo order first, as listed there) in this order and takes the first ticket that passes `config/rules.yaml`:
 
 1. Release-meta priority set (rule 16) — anything the next-release meta references, regardless of label.
 2. `bug`-labeled unassigned issues, oldest first — the historical scope, still the highest-value non-meta work.
 3. Everything else unassigned — `enhancement`, `documentation`, `chore`, `papercut`, `good first issue`, `help wanted`, `governance`, `spike`, unlabeled — oldest first. Skip labels in `rules.yaml` (`do-not-triage`, `needs-design`, `discussion`, `RFC`, `needs-info`, `blocked`) still apply and take priority over the walk.
 
+**Already taken means a closing link, not a mention.** An issue is taken when an open PR closes it (GitHub's `closedByPullRequestsReferences`, i.e. a `Fixes`/`Closes` link) or a project Status puts it in a working column. A PR that only mentions or cross-references the issue does not take it. Walk every candidate on a rung before calling the rung empty; do not sample a few and stop.
+
 Rung 3 only fires when rungs 1 and 2 are empty. A bug the agent could take is never skipped in favour of an enhancement. Within rung 3 the manager still gates on whether it can meaningfully act — a pure-discussion `epic` with no concrete deliverable, or a stalled `spike`, is walked past like a skip-labelled ticket (log the reason, move on). The action for a rung-3 pick is the normal issue flow: post a takeover comment, self-assign, spawn the coder/tester loop; the QEMU reproduction sub-flow only applies when `rules.yaml` sets `reproduce_in_qemu: true`, which the catch-all rule does not.
+
+## 8f. Self-sourced build work
+
+When no issue qualifies on a build turn, the agent finds its own work in the watched repositories (every `repositories[]` entry in `config/config.yaml`), in this order:
+
+1. **Red default branch.** The latest completed run of a workflow on the default branch failed, for a reason in the repo's own code or CI config (not a runner outage or an expired secret we cannot fix). Check the run's failed log and whether the failure repeats on the run before it.
+2. **Open code-scanning alerts.** `gh api repos/<o>/<r>/code-scanning/alerts?state=open`. Group alerts that share a rule and a fix (for example every `actions/missing-workflow-permissions` alert in a repo) into one PR.
+
+Before taking one, make sure nobody is already on it: no open PR touches the same file for the same problem (search open PRs on that repo for the rule id, the workflow name or the file path), and no open issue tracks it with an owner. The fix goes through the normal coder, tester and reviewer loop and opens a PR like any issue fix. The PR body names what it fixes (the alert links or the failing run) in place of a `Fixes:` line. The ticket ref for the audit trail is `<owner>/<repo>!<source>-<id>`, for example `kairos-io/hadron!code-scanning-12` or `kairos-io/kairos!main-ci-38444008566`, recorded as `kind = 'issue'`.
+
+Leave it alone when the fix is a design decision rather than a code change (for example turning a scanner off), or when it needs secrets, settings or permissions only a maintainer has. In that case say so in the slot summary for the operator.
 
 ## 8e. Re-review requests come first
 
@@ -206,9 +223,9 @@ A maintainer asking us to look again is a direct request, so it goes ahead of ev
 
 For each hit, run a fresh reviewer round at the current head (`round++`, regenerate `pre_review`), read every reply on our threads, and post the new verdict: approve if our points are addressed, otherwise keep changes-requested and say what is still open. Posting the review clears the request. Take the oldest request first; one per slot, then carry on with rule 8d. A PR that is ours is not reviewed by us; answer the mention instead. A request for our review wins over rule 8b: a core-team review or approval on the PR does not cancel it, because the request is why we are here.
 
-## 8d. QA of board cards is the top priority
+## 8d. QA of board cards
 
-Before anything else in a slot except rule 8e re-review requests — before in-flight envelopes, own-PR fixups (rule 8a) and the rule 8 pipeline — the manager checks the **QA** column of the kairos-io org board (project 1) and, if a card there qualifies, spends the slot QA-ing it. One card per slot. An in-flight QA envelope (phase `qa`) resumes ahead of a fresh QA pick.
+QA leads a review turn (rule 8c), and on a build turn it runs only when there is no build work. When it is QA's turn, the manager checks the **QA** column of the kairos-io org board (project 1) and, if a card there qualifies, spends the slot QA-ing it. One card per slot. An in-flight QA envelope (phase `qa`) resumes ahead of a fresh QA pick.
 
 **Which card.** Walk the cards whose Status is `QA` and take the first one that passes all of:
 
@@ -232,11 +249,11 @@ Before anything else in a slot except rule 8e re-review requests — before in-f
 
 Rule 3b.ii still gates both: no third-party-inspectable proof, no label and no move. When the repo has no `QA:` labels (rule 3b), the result line in the comment stands in for the label and the move still happens.
 
-QA slots do not count toward the rule 8c quota.
+A QA slot counts as a review slot for the rule 8c ratio.
 
-## 8a. Own open PRs come right after QA
+## 8a. Own open PRs come first on a build turn
 
-Any pull request the Second Foundation opened and has not yet seen merged or closed is checked at the start of every slot, after the QA pick (rule 8d) and ahead of the rule 8 pipeline. The check is cheap — one `gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open --json number,url,mergeable,reviewDecision,statusCheckRollup` per watched repo — and the manager only ACTS on a PR when at least one of these is true:
+Any pull request the Second Foundation opened and has not yet seen merged or closed is checked first on every build turn (rule 8c), right after rule 8e and ahead of QA and the rest of the pipeline. The check is cheap — one `gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open --json number,url,mergeable,reviewDecision,statusCheckRollup` per watched repo — and the manager only ACTS on a PR when at least one of these is true:
 
 - **CI is red.** Any status-check leaf on the rollup is `FAILURE` or `TIMED_OUT`. Fix forward: dispatch the coder / tester to address the failure, commit, push, `git push origin <branch>`. Do not force-push.
 - **A reviewer requested changes.** `reviewDecision == 'CHANGES_REQUESTED'`, or the PR has new comments on the branch since the Second Foundation's last commit that name a file/line change. Dispatch the coder to address them, commit, push.

@@ -160,11 +160,46 @@ If a DB write fails, log a warning line but do NOT abort the slot. The envelope 
 
 #### Re-review requests first (rule 8e)
 
-Before QA, look for PRs where a maintainer asked us to review again: `agent.github_user` in `.requested_reviewers` (REST `gh api repos/<o>/<r>/pulls/<n>`, or `gh search prs --review-requested=<agent.github_user> --state open`), a `review_requested` timeline event for us newer than our last review, an `@`-mention newer than our last review, or a reply in one of our inline review threads (`pulls/<n>/comments` with `in_reply_to_id` on our comment). Take the oldest; run a reviewer round at the current head with `round++`, have it read the replies on our threads, and post the new verdict (approve if our points are addressed, otherwise changes-requested naming what is still open). That commits the slot. If there is none, go on to QA.
+Before QA, look for PRs where a maintainer asked us to review again: `agent.github_user` in `.requested_reviewers` (REST `gh api repos/<o>/<r>/pulls/<n>`, or `gh search prs --review-requested=<agent.github_user> --state open`), a `review_requested` timeline event for us newer than our last review, an `@`-mention newer than our last review, or a reply in one of our inline review threads (`pulls/<n>/comments` with `in_reply_to_id` on our comment). Take the oldest; run a reviewer round at the current head with `round++`, have it read the replies on our threads, and post the new verdict (approve if our points are addressed, otherwise changes-requested naming what is still open). That commits the slot. If there is none, decide the turn.
+
+#### Build turn or review turn (rules 8 and 8c)
+
+After rule 8e, work out whether this slot is a build turn or a review turn. Build work is a slot committed on an issue, on a self-sourced rule 8f ticket, or on one of our own PRs (`tickets.kind = 'issue'`, or `kind = 'pr'` with `third_party = 0`). Review work is a slot committed on QA or on a review of someone else's PR. Count the build slots since the last review slot:
+
+```sql
+SELECT COUNT(*) FROM slots s
+  JOIN tickets t ON t.ticket_ref = s.ticket_ref
+ WHERE s.outcome = 'finished'
+   AND (t.kind = 'issue' OR t.third_party = 0)
+   AND s.ended_at > COALESCE(
+     (SELECT MAX(s2.ended_at) FROM slots s2
+        LEFT JOIN tickets t2 ON t2.ticket_ref = s2.ticket_ref
+       WHERE s2.outcome = 'finished' AND s2.ticket_ref IS NOT NULL
+         AND COALESCE(t2.kind, 'pr') = 'pr' AND COALESCE(t2.third_party, 1) = 1),
+     '1970-01-01T00:00:00Z');
+```
+
+Below `config.pipeline.builds_per_review_slot` (default 2; `0` means always a build turn) it is a **build turn**; otherwise a **review turn**. Log `turn=build|review count=<n>` in the slot's event stream. Every slot-committing pick must upsert its `tickets` row with `kind` and `third_party` set, or the count is wrong.
+
+The sections below are written in the order QA, in-flight, own PRs, pipeline. Follow them in the turn's order instead:
+
+- **Build turn:** own open PRs that need action (rule 8a) → in-flight build envelopes (issue, rule 8f or own-PR work) → fresh `triage_issues` pick (rule 8c ladder) → fresh rule 8f pick (see "Self-sourced build work" below) → only if all of these are empty, QA (rule 8d) → `review_prs`.
+- **Review turn:** QA (rule 8d) → in-flight review envelopes → `review_prs` → then the build order above if nothing qualified.
+
+Never idle on a turn: when the turn's own work is empty, fall through to the other kind.
+
+#### Self-sourced build work (rule 8f)
+
+Reached on a build turn when no issue qualifies. For each `repositories[]` entry, in config order:
+
+1. **Red default branch:** `gh run list --repo <o>/<r> --branch <default_branch> --status completed --limit 20 --json databaseId,workflowName,conclusion,createdAt`. For each workflow whose latest run is `failure`, read `gh run view <id> --repo <o>/<r> --log-failed` and check that the run before it failed the same way. Take it when the cause is in the repo's code or CI config; skip runner outages, rate limits and secrets we cannot fix.
+2. **Code-scanning alerts:** `gh api 'repos/<o>/<r>/code-scanning/alerts?state=open&per_page=100' --jq '.[] | {number, rule: .rule.id, path: .most_recent_instance.location.path, line: .most_recent_instance.location.start_line}'`. Group alerts that share a rule and a fix into one ticket.
+
+Before accepting, check nobody is on it: `gh pr list --repo <o>/<r> --state open --search "<rule id or workflow name or file path>"` and the open issues for the same thing. Leave design decisions (turning a scanner off) and fixes that need maintainer-only settings or secrets; name them in the slot summary instead. An accepted ticket gets ticket ref `<o>/<r>!<source>-<id>` (`code-scanning-<first alert number>` or `main-ci-<run id>`), `kind = 'issue'`, an envelope under `workspace/.state/<o>_<r>/<source>-<id>/`, and goes through the normal intake → coder → tester → reviewer → finalize flow. There is no issue to self-assign or comment on; the PR body lists the alert URLs or the failing run in place of a `Fixes:` line, and rule 4c's recheck becomes: the alert is still open / the default branch is still red.
 
 #### QA next (rule 8d)
 
-After rule 8e, QA a card from the board's `QA` column if one qualifies. An operator pin (`KAIROS_TRIAGE_PICK` or `workspace/.pin-next`, startup checks 2/2a) still wins over QA. One QA card per slot; a QA pick commits the slot once the tester is dispatched, and is subject to the same repo dedupe as any other pick.
+On a review turn, or on a build turn with no build work, QA a card from the board's `QA` column if one qualifies. An operator pin (`KAIROS_TRIAGE_PICK` or `workspace/.pin-next`, startup checks 2/2a) still wins over QA. One QA card per slot; a QA pick commits the slot once the tester is dispatched, and is subject to the same repo dedupe as any other pick.
 
 **Resume first.** If an envelope with `phase: qa` exists (and is not `done`/`dropped`/`escalated`), resume it: go straight to "Dispatch" or "Report" below depending on whether `envelope.qa.result` is set.
 
@@ -239,7 +274,7 @@ gh project item-edit --project-id PVT_kwDOBrVfSM4AGI3D --id <item_id> \
 
 #### In-flight envelopes
 
-When the QA pick above found nothing, look for an in-flight envelope. Walk `workspace/.state/` for any `envelope.json` whose `phase` is not `done`, `escalated` or `dropped`.
+Look for an in-flight envelope (on a build turn, before QA; on a review turn, after QA). Walk `workspace/.state/` for any `envelope.json` whose `phase` is not `done`, `escalated` or `dropped`.
 
 **Dormant `awaiting-author` filter (rule 12b).** Before treating an `awaiting-author` envelope as in-flight for this slot, poll the PR cheaply:
 
@@ -255,7 +290,7 @@ Take up to `roles.concurrency` (read it from `config/config.yaml`; currently 1) 
 
 **Dedupe by repo before dispatch.** Two candidates on the same `<owner>/<repo>` cannot run in the same slot: the per-slot worktree pattern `workspace/<repo>-slot<slot_seq>-<n>` still shares the repo's shared object store, and two concurrent workers on the same repo would race on `git fetch --prune` and on the pack files. Walk the collected in-flight envelopes in age order and skip any whose repo already appears in the accepted set; the skipped ones stay in flight and are picked up next slot.
 
-If nothing is in flight, and the hard cap is not tripped, check own open PRs first (rule 8a):
+On a build turn, check own open PRs first (rule 8a), before in-flight envelopes; on a review turn, after them:
 
 For each `repositories[]` entry:
 
@@ -285,31 +320,13 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
    ```
    gh pr list --repo <owner>/<repo> --state open --json number,title,author,assignees,labels,reviewRequests,reviews,url,updatedAt
    ```
-2. Fetch open issues on `kairos-io/kairos` (the only repo with `watch.issues: true`).
+2. Fetch open issues on every repo with `watch.issues: true` (currently hadron and kairos), in config order.
 3. Compute the release-meta priority queue per rule 16:
    - Enumerate open issues on `kairos-io/kairos` matching `release_meta.detection` (label OR title regex).
    - Extract each meta's semver from its title. Query `gh api repos/kairos-io/kairos/git/refs/tags/<tag_prefix><version>` to see which tags already exist. Drop those.
    - Sort ascending. Take the lowest remaining. Parse its body and every comment through `release_meta.reference_patterns` to produce the priority reference set.
-4. Apply the pipeline (rule 8). Default order comes from `config.pipeline` (`review_prs` first, `triage_issues` second). Before applying it, check the anti-starvation quota `config.pipeline.reviews_per_issue_check` (default 5, 0 disables).
-
-   **Data-quality prerequisite.** Every slot-committing pick MUST upsert a `tickets` row at commit time, populating `kind` (`'issue'` or `'pr'`) from what the manager fetched off GitHub for that ticket. Without this, the JOIN below drops the slot and the quota under-counts. If a legacy slot row exists with no matching `tickets` row, treat it as `kind='pr'` (safe default: reviews are what starve issues), NOT as unknown-and-skip.
-   ```sql
-   SELECT COUNT(*) FROM slots s
-     LEFT JOIN tickets t ON t.ticket_ref = s.ticket_ref
-    WHERE s.outcome = 'finished'
-      AND s.ticket_ref IS NOT NULL
-      AND s.ended_at > COALESCE(
-        (SELECT MAX(s2.ended_at) FROM slots s2
-           JOIN tickets t2 ON t2.ticket_ref = s2.ticket_ref
-          WHERE s2.outcome = 'finished'
-            AND t2.kind = 'issue'),
-        '1970-01-01T00:00:00Z')
-      AND COALESCE(t.kind, 'pr') = 'pr'
-      -- QA slots (rule 8d) do not count toward the quota
-      AND NOT EXISTS (SELECT 1 FROM events e WHERE e.slot_id = s.slot_id AND e.action = 'qa_verdict');
-   ```
-   If the count is `>= reviews_per_issue_check`, invert the pipeline order for this slot (`triage_issues` first, `review_prs` second) so an issue is picked whenever one qualifies. When the quota flips the order, log `pipeline_flipped_by_quota=<count>` in the slot's audit event stream. If no issue qualifies after the flip, fall back to `review_prs` this slot — never idle just to preserve the flip.
-5. Inside each stage, drain the priority set first, then fall back to everything else. **`triage_issues` label priority (rule 8c):** (a) release-meta priority set, (b) unassigned issues carrying `bug` (oldest first), (c) every other unassigned issue regardless of label (oldest first). Rung (c) only fires when (a) and (b) are empty; `rules.yaml` skip labels still gate every rung. A pure-discussion `epic`, a stalled `spike`, or anything with no concrete deliverable is walked past like a skip-labelled ticket (log the reason, move on) — the anti-starvation quota does not force a pick, it only reorders the stages.
+4. Apply the pipeline (rule 8) in the turn's order: on a build turn `triage_issues` then rule 8f, then `review_prs` only if both are empty; on a review turn `review_prs` first, then the build order. Every slot-committing pick MUST upsert a `tickets` row at commit time with `kind` (`'issue'` or `'pr'`) and, for PRs, `third_party` (0 for ours, 1 otherwise), or the turn count above goes wrong.
+5. Inside each stage, drain the priority set first, then fall back to everything else. **`triage_issues` label priority (rule 8c):** (a) release-meta priority set, (b) unassigned issues carrying `bug` (oldest first), (c) every other unassigned issue regardless of label (oldest first). Rung (c) only fires when (a) and (b) are empty; `rules.yaml` skip labels still gate every rung. A pure-discussion `epic`, a stalled `spike`, or anything with no concrete deliverable is walked past like a skip-labelled ticket (log the reason, move on) — the turn does not force a pick, it only orders the stages.
 6. Inside each candidate, apply `config/rules.yaml`:
    - Skip anything assigned to a human that is not `agent.github_user` (rule 5). Self-assignment carve-out: if the assignee set is exactly `[<ticket_author>]`, treat the ticket as unassigned. If any assignee is neither the agent nor the author, skip.
    - Skip anything already labelled with rules-listed skip labels.
@@ -335,6 +352,8 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
     - **Linked open PR:** any `closedByPullRequestsReferences.nodes[].state == OPEN` — another contributor (human or bot) has an unmerged PR fixing it; our work would duplicate theirs.
     - **Dropped by the operator:** `workspace/.state/<owner>_<repo>/<n>/envelope.json` exists with `phase: dropped`. A human told us to leave this ticket alone; never re-pick it.
     - **Project status says taken:** any `projectItems.nodes[]` has a Status field whose name (case-insensitive, strip trailing emoji/whitespace) is one of `In Progress`, `Under review`, `QA`, `QA OK` — someone has already pulled the issue into a working column on a project board.
+
+    Only `closedByPullRequestsReferences` counts as a linked PR. A PR that only mentions or cross-references the issue (timeline cross-reference, `#n` in its body without `Fixes`/`Closes`) does NOT take it. Walk every candidate on a rung before calling the rung empty; never sample a few and stop.
 
     If every linked PR is closed/merged without the issue closing, that signal is clear. If project Status is `Todo`, `Icebox`, `Done`, missing, or absent entirely, that signal is clear too. Only skip when at least one of the two signals actually fires. In dry-run mode run the same query (reads are always on).
 7. Take up to N fresh tickets, where N is the remaining budget after in-flight envelopes and own-PR fixups are counted against the `roles.concurrency` cap from `config/config.yaml`. Walk the queue in the priority order above and accept a candidate only if its `<owner>/<repo>` is not already in this slot's accepted set (worktree dedupe — see the escalate-extras block above). Skipped duplicates stay in the queue for the next slot.

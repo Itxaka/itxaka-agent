@@ -40,20 +40,18 @@ agent:
     - mudler         # Ettore Di Giacinto
     - jimmykarily    # Dimitris Karakasilis
 
-  # Fixed processing order per cycle. Higher priority workloads drain first;
-  # the agent only descends the list when the current stage has nothing to
-  # do. See RULES.md rule 8.
+  # Stage order on a build turn. A review turn runs review_prs first; see
+  # builds_per_review_slot below and RULES.md rule 8.
   pipeline:
-    - review_prs
     - triage_issues
+    - review_prs
 
-  # Quota that keeps the review queue from starving issue-driven work.
-  # Every `reviews_per_issue_check` consecutive slot commits on PRs, the
-  # next fresh-pick slot flips the pipeline order and tries `triage_issues`
-  # first. The counter resets whenever a slot commits on an issue. See
-  # RULES.md rule 8c and manager step 4.
-  # 0 disables the quota (original behaviour).
-  reviews_per_issue_check: 5
+  # Build turns vs review turns (RULES.md rules 8 and 8c). After this many
+  # slots committed on build work (own-PR fixups, issue fixes, rule 8f
+  # self-sourced fixes) in a row, the next slot is a review turn: QA and
+  # third-party reviews go first. A build turn with no build work falls
+  # back to QA and reviews. 0 makes every slot a build turn.
+  builds_per_review_slot: 2
 
   # (No label configured — rule 12 uses self-assignment as the sole
   # visibility signal. See RULES.md.)

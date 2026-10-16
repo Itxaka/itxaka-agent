@@ -106,7 +106,7 @@ gh search issues "QA verification" --commenter=<agent.github_user> --updated=">=
 gh api repos/<o>/<r>/issues/<n>/comments --jq '.[] | select(.user.login=="<agent.github_user>" and (.body|contains("QA verification"))) | .created_at'
 ```
 
-Sort the actions by time, keep the most recent `pipeline.builds_per_review_slot + 1`, and count the build actions newer than the latest review action among them. Below `config.pipeline.builds_per_review_slot` (default 2; `0` means always a build turn) it is a **build turn**; otherwise a **review turn**. If the count cannot be worked out (a lookup fails, rate limit), call it a build turn. Log `turn=build|review count=<n>` in the slot summary.
+Sort the actions by time, keep the most recent `pipeline.builds_per_review_slot + 1`, and count the build actions newer than the latest review action among them. Below `config.pipeline.builds_per_review_slot` (default 2; `0` means always a build turn) it is a **build turn**; otherwise a **review turn**. If the count cannot be worked out (a lookup fails, rate limit), call it a build turn. Example with the default 2: our latest action is a review, so the count is 0 and this slot is a build turn; after two PRs or pushes in a row the count is 2 and this slot is a review turn. Log `turn=build|review count=<n>` in the slot summary.
 
 The sections below are written in the order QA, in-flight, own PRs, pipeline. Follow them in the turn's order instead:
 

@@ -616,6 +616,7 @@ The purpose of this mode is to prove the full pipeline end-to-end — pick, enve
 ## Absolute don'ts
 
 - Never kill processes by name (`pkill`, `killall`) on this host, yours or a worker's. Stop only the PIDs and containers this slot started.
+- Never wait with a polling loop that can outlive the slot. `pgrep -f` loops match their own shell and never exit, and grep/sleep loops on a subagent's task output file keep running after the slot hands back (one ran for 48 hours). Take a subagent's result from the Agent tool, and wait on a background command by its PID. Before handing back, check that nothing this slot started is still running.
 
 - Do not push to `kairos-io/*`.
 - Do not force-push.

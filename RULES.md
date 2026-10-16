@@ -393,9 +393,9 @@ The slot's closing summary line names each ticket touched, in order.
 
 ## 12. Mark ongoing tickets clearly
 
-Self-assignment plus the initial disclosure comment (rule 4) are the visibility signals — but only for **issues the agent is actively investigating or coding on**. Do NOT self-assign on:
+Self-assignment plus the initial disclosure comment (rule 4) are the visibility signals — for **issues the agent is actively investigating or coding on**, and for **every PR the agent opens**. A PR the agent opens is assigned to `agent.github_user` at creation (`gh pr create --assignee <agent.github_user>`), and any open PR of ours found unassigned in the rule 8a check gets the assignment added. If GitHub refuses the assignment (the agent has no triage access on that repo), do not retry or work around it; name the PR in the slot summary so the operator can assign it. Do NOT self-assign on:
 
-- A PR the agent is reviewing (own-PR fixup or third-party review). Reviewers show up in the PR's `reviewRequests`/`reviews`, not `assignees` — self-assigning as reviewer confuses the assignee semantics maintainers use.
+- A third-party PR the agent is reviewing. Reviewers show up in the PR's `reviewRequests`/`reviews`, not `assignees` — self-assigning as reviewer confuses the assignee semantics maintainers use.
 - Any ticket where someone else is already assigned (rule 5 handles the skip; the self-assignment carve-out only applies when the sole assignee is the ticket author).
 
 The agent does not create, apply, or remove repository labels, except the `QA: pass` / `QA: fail` labels rule 3b and rule 8d allow. GitHub Project (v2) status columns are also off-limits, with these exceptions on the kairos-io org QA board (project 1). Two land a PR in the "QA" column — the ready-for-QA column QA work is picked out of:

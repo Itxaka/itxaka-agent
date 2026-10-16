@@ -47,9 +47,9 @@ agent:
     - review_prs
 
   # Build turns vs review turns (RULES.md rules 8 and 8c). After this many
-  # slots committed on build work (own-PR fixups, issue fixes, rule 8f
-  # self-sourced fixes) in a row, the next slot is a review turn: QA and
-  # third-party reviews go first. A build turn with no build work falls
+  # build actions on GitHub by agent.github_user (PRs it opened, pushes to
+  # its own PR branches) since its last review or QA verification comment,
+  # the next slot is a review turn: QA and third-party reviews go first. A build turn with no build work falls
   # back to QA and reviews. 0 makes every slot a build turn.
   builds_per_review_slot: 2
 

@@ -133,9 +133,9 @@ The manager decides third-party status when opening the envelope: if the PR's au
 
 ## Role journals
 
-Each worker writes a prose journal at `workspace/.state/<owner>_<repo>/<n>/journals/<role>-round<N>.md` before returning. Free-form: what the role read, what surprised it, what it deliberately did not do. The manager slurps this file into the audit DB's `worker_reports.journal` column via SQLite's `readfile()` builtin, so a retrospective query gets the role's own reasoning verbatim without the manager having to parse it.
+Each worker writes a prose journal at `workspace/.state/<owner>_<repo>/<n>/journals/<role>-round<N>.md` before returning. Free-form: what the role read, what surprised it, what it deliberately did not do. The file stays on disk next to the envelope, so a human looking back can read the role's own reasoning verbatim.
 
-Journals are additive to the envelope, not a replacement — the envelope carries the machine-readable state (phase, artifacts, verdicts) and the journal carries the human-readable reasoning. If a worker forgets to write its journal, the manager records `journal = NULL` and continues; the slot is not aborted.
+Journals are additive to the envelope, not a replacement — the envelope carries the machine-readable state (phase, artifacts, verdicts) and the journal carries the human-readable reasoning. If a worker forgets to write its journal, the manager notes it and continues; the slot is not aborted.
 
 ## Configuration knobs
 

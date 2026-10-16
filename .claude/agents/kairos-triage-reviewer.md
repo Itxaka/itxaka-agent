@@ -144,7 +144,7 @@ Keep `patch` verbatim — no diff markers (`-`/`+`), no line numbers, just the r
 
 ## Journal (write this before returning)
 
-Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/journals/reviewer-round<N>.md`. This file is the retrospective tail — a human reads it after the fact to understand what you saw and thought, and the manager slurps it into the audit DB. Keep it prose, in your own words:
+Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/journals/reviewer-round<N>.md`. This file is the retrospective tail — a human reads it after the fact to understand what you saw and thought. Keep it prose, in your own words:
 
 - What context you actually read from `envelope.pre_review` and what you skipped as irrelevant.
 - What each check surfaced — even the ones that passed. Cite `file:line` where relevant.

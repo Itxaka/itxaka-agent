@@ -87,7 +87,7 @@ Same rules as the coder: every commit through `scripts/agent-commit.sh` (identit
 
 ## Journal (write this before returning)
 
-Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/journals/tester-round<N>.md`. Prose, in your own words: what you tested, what the suite said, what the VM behaved like, what you decided not to test and why. The manager slurps this into the audit DB as the retrospective tail; a human reads it later to understand your reasoning. It replaces nothing — the envelope updates and the return summary are still required.
+Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/journals/tester-round<N>.md`. Prose, in your own words: what you tested, what the suite said, what the VM behaved like, what you decided not to test and why. It stays on disk next to the envelope; a human reads it later to understand your reasoning. It replaces nothing — the envelope updates and the return summary are still required.
 
 ## What you write back
 

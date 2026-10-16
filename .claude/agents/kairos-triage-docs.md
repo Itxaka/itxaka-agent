@@ -55,7 +55,7 @@ Same as coder and tester: commit only through `scripts/agent-commit.sh -C <workt
 
 ## Journal (write this before returning)
 
-Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/journals/docs-round<N>.md`. One or two paragraphs: what you concluded needs (or does not need) documentation, where you looked, what convention you followed. The manager slurps this into the audit DB as the retrospective tail. It replaces nothing — the envelope updates and the return summary are still required.
+Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/journals/docs-round<N>.md`. One or two paragraphs: what you concluded needs (or does not need) documentation, where you looked, what convention you followed. It stays on disk next to the envelope as the retrospective tail. It replaces nothing — the envelope updates and the return summary are still required.
 
 ## What you write back
 

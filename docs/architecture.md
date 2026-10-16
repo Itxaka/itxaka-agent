@@ -59,7 +59,7 @@ The single "investigator" and "reviewer" boxes below are actually **a collective
 
 Per-ticket state (phase, round, artifact paths, reviewer history, pre-review context) lives in a JSON envelope at `workspace/.state/<owner>_<repo>/<ticket>/envelope.json`. Rule 19 makes this file the source of truth for state-machine progression — the manager reads it at the start of every slot and writes it at every transition. Workers write to it; the reviewer does not (it returns its verdict as text and the manager appends it).
 
-An additional SQLite ledger at `workspace/.state/audit.sqlite` mirrors every slot, event, verdict, artifact, cost tick, and gated call — see `config/audit-schema.sql`. This is a dashboard feed, not a coordination channel; only the manager writes to it, workers do not (rule 17). Both live and dry-run runs write, since the DB is local-only. The manager runs `bash dashboard/generate.sh` as the last step of every slot so `dashboard/index.html` stays in step with the ledger.
+The only other local record is the cost ledger at `workspace/.state/budget.json` (rule 21). Everything else the agent did — PRs, reviews, comments, labels, board moves — is on GitHub, which is the record of what the agent has done.
 
 ## Resolved decisions
 

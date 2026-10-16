@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Recompute costs.usd (and worker_reports / budget ledger if needed) from
-config/model-pricing.yaml.
+"""Recompute the usd field of every budget ledger entry from its token count,
+using config/model-pricing.yaml and the `model:` of each role's agent file.
 
-Run after editing the pricing YAML, or to backfill rows that were inserted
-before the pricing table existed.
+Run after appending a ledger entry, after editing the pricing YAML, or to fix
+entries written before the pricing table existed.
 
-Usage:  python3 scripts/reprice.py [db_path]
-Default DB: workspace/.state/audit.sqlite
+Usage:  python3 scripts/reprice.py [ledger_path]
+Default ledger: workspace/.state/budget.json
 """
 
 from __future__ import annotations
@@ -14,15 +14,13 @@ from __future__ import annotations
 import json
 import pathlib
 import re
-import sqlite3
 import sys
 from datetime import datetime, timezone
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PRICING = ROOT / "config" / "model-pricing.yaml"
 AGENTS = ROOT / ".claude" / "agents"
-DB = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "workspace/.state/audit.sqlite"
-LEDGER = ROOT / "workspace/.state/budget.json"
+LEDGER = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "workspace/.state/budget.json"
 
 
 def load_pricing() -> tuple[float, dict[str, dict[str, float]]]:
@@ -94,36 +92,29 @@ def main() -> None:
         rate[role] = r
     print(f"role -> usd/token: { {k: f'{v:.3e}' for k,v in rate.items()} }")
 
-    if not DB.exists():
-        print(f"no DB at {DB}, nothing to reprice")
+    if not LEDGER.exists():
+        print(f"no ledger at {LEDGER}, nothing to reprice")
         return
 
-    con = sqlite3.connect(DB)
-    cur = con.cursor()
-    cur.execute("SELECT cost_id, role, tokens FROM costs")
-    rows = cur.fetchall()
-    n = 0
-    for cost_id, role, tokens in rows:
-        usd = tokens * rate.get(role, 0.0)
-        cur.execute("UPDATE costs SET usd=? WHERE cost_id=?", (usd, cost_id))
-        n += 1
-    con.commit()
-    con.close()
-    print(f"repriced {n} costs rows in {DB}")
+    try:
+        ledger = json.loads(LEDGER.read_text())
+    except json.JSONDecodeError:
+        sys.exit(f"ledger at {LEDGER} is not valid JSON, not touching it")
+    if not isinstance(ledger, list):
+        sys.exit(f"ledger at {LEDGER} is not a JSON array, not touching it")
 
-    if LEDGER.exists():
-        try:
-            ledger = json.loads(LEDGER.read_text())
-        except json.JSONDecodeError:
-            print(f"ledger at {LEDGER} not JSON-array, skipped")
-            return
-        if isinstance(ledger, list):
-            for entry in ledger:
-                r = rate.get(entry.get("role"), 0.0)
-                if "tokens" in entry:
-                    entry["usd"] = entry["tokens"] * r
-            LEDGER.write_text(json.dumps(ledger, indent=2))
-            print(f"repriced {len(ledger)} ledger rows in {LEDGER}")
+    n = 0
+    for entry in ledger:
+        if "tokens" not in entry:
+            continue
+        role = entry.get("role")
+        if role not in rate:
+            print(f"  warning: unknown role={role!r} at ts={entry.get('ts')}, usd left as is")
+            continue
+        entry["usd"] = entry["tokens"] * rate[role]
+        n += 1
+    LEDGER.write_text(json.dumps(ledger, indent=2))
+    print(f"repriced {n} of {len(ledger)} ledger entries in {LEDGER}")
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"done at {ts}")

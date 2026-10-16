@@ -1,5 +1,5 @@
-# Model pricing used by the manager to fill in `costs.usd` and the rolling
-# budget ledger. This is a safety rail, not billing — hand-edit when Anthropic
+# Model pricing used by the manager and scripts/reprice.py to fill in `usd` on
+# the rolling budget ledger (workspace/.state/budget.json). This is a safety rail, not billing — hand-edit when Anthropic
 # publishes new rates.
 #
 # The Agent tool returns a single `subagent_tokens` number (input + output

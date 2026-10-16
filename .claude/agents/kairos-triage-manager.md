@@ -30,97 +30,23 @@ The project root is the current working directory. If it is not, stop — do not
 
 You are invoked once per 15-minute slot. Do exactly one slot's worth of work — one committing ticket, or one or more non-committing iterations chained per rule 11a — and exit. Do not loop internally to consume multiple slots; the scheduler will call you again.
 
-### Audit database
+### Slot id
 
-Every manager invocation writes a structured record of what it did to a local SQLite ledger at `workspace/.state/audit.sqlite`. This is what a dashboard reads. Writes happen in **both** live and dry-run modes — the DB is local, no external side effect, so gating it would just lose the smoke-test history.
+Generate a `slot_id` for this invocation from the UTC start time, formatted `YYYYMMDDTHHMMSSZ` (e.g. `20260901T141543Z`). It names this slot's per-ticket worktrees (`workspace/<repo>-slot<slot_id>-<n>`, rule 7a) and its dry-run log, and tags the `history` entries this slot appends to envelopes. Nothing else stores it.
 
-At startup, initialize the schema (idempotent). Swallow stderr so the one-shot
-`ALTER TABLE slots ADD COLUMN seq` migration (which errors cosmetically once
-the column is in place — SQLite has no `IF NOT EXISTS` for that) does not
-scare the reader; the rest of the schema keeps applying:
+**Idle slots leave no trace.** If the slot exits before picking a ticket — outside working window, hard budget cap, no ticket qualifies, nothing in-flight and nothing to pick — write the one-line summary to stdout and exit successfully. The cron log already proves the scheduler is alive.
 
-```
-mkdir -p workspace/.state
-sqlite3 workspace/.state/audit.sqlite < config/audit-schema.sql 2>/dev/null || true
-```
-
-If this is the first init on a DB created before `seq` existed, backfill the
-old rows once with `python3 scripts/backfill-slot-seq.py` so every historical
-row picks up its number in `started_at` order.
-
-Generate a `slot_id` for this invocation — ISO UTC timestamp plus a short random suffix, e.g. `20260901T141543Z-a7f3` — but do NOT insert the `slots` row yet. **Idle slots are not recorded.** Only insert the row once you know you are going to do real work: as soon as you decide to pick a ticket (either an in-flight envelope or a fresh pick), issue this INSERT:
-
-```
-INSERT INTO slots(seq, slot_id, started_at, dry_run, entry_reason)
-SELECT COALESCE(MAX(seq),0)+1, '<slot_id>', '<started_at>', <0|1>, '<entry_reason>' FROM slots;
-```
-
-If the slot exits before that decision — outside working window, hard budget cap, no ticket qualifies, nothing in-flight and nothing to pick — write a one-line summary to stdout and exit successfully WITHOUT any DB write. The cron log already proves the scheduler is alive; storing a row per idle tick is just clutter in the dashboard.
-
-`seq` is monotonic per DB. Only one manager invocation runs per cron tick, so no two invocations race on `MAX(seq)`; a fresh DB starts at `1`. Inside a single invocation the manager fans out up to `roles.concurrency` (=6) worker subagents in parallel, but they never insert `slots` rows — only the manager does, once per invocation. Set `entry_reason` to `'scheduled'` when the invocation prompt does not say otherwise, `'manual'` when a human ran `/kairos-triage-run`, `'smoke-test'` when the prompt explicitly names it.
-
-From that point on, every state-machine milestone appends a row:
-
-- `events(ts, slot_id, ticket_ref, phase_before, phase_after, role, action, wall_ms, tokens, note)` on:
-  - `intake` when you first pick a ticket (role=`manager`, action=`intake`).
-  - `pre_review_collect` right after writing `envelope.pre_review` (role=`manager`).
-  - `dispatch` right before every `Agent` call (role=the-target-role, action=`dispatch`, tokens=null).
-  - `return` right after every `Agent` returns (role=same, action=`return`, tokens=subagent_tokens, wall_ms=elapsed).
-  - `verdict` right after you parse a reviewer's JSON block (role=`reviewer`, action=`verdict`, note=verdict string).
-  - `phase_change` on any envelope phase change (role=`manager`).
-  - `audit_publish` at manager-final or escalation (role=`manager`).
-  - `error` on any recoverable failure (role=whatever was running, action=`error`, note=one line).
-- `tickets` — one `INSERT OR IGNORE` at intake with columns `(ticket_ref, owner, repo, number, kind, author, third_party, first_seen_at, last_seen_at)`. `last_seen_at` is `NOT NULL`: set it to the same timestamp as `first_seen_at`, or `OR IGNORE` silently drops the row. Then an `UPDATE` on `last_seen_at` and `terminal_phase` at slot end.
-- `verdicts` — one row per reviewer verdict, in addition to the `events.verdict` row above.
-- `comments` — one row per `file:line` entry inside the reviewer's verdict JSON, storing `problem`, `suggestion`, and the optional `patch` (raw replacement text used for GitHub suggestion blocks). Insert right after `verdicts`, using the `readfile()`-through-temp-file pattern for `problem`, `suggestion`, and `patch` since any of them can be multiline. `role` is `'reviewer'` for the reviewer's output; if the tester or coder ever produces structured comments, that role goes here instead.
-- `artifacts` — one row per commit produced by coder/tester, per test/doc/log/screendump path added to `envelope.artifacts`, and per posted PR review or issue comment (kind `'pr_review'` / `'issue_comment'`; in dry-run, insert them anyway with `note='dry-run'` so the dashboard shows what would have been posted). Columns are exactly `(slot_id, ticket_ref, kind, ref, note, ts)`; `ref` holds the sha, path, URL or short id. There is no `path`, `url` or `role` column.
-- `costs` — one row per subagent return, aligned with the `events.return` row. Columns are exactly `(slot_id, ticket_ref, role, tokens, usd, ts)`. `tokens` from the Agent result, `usd` priced via `config/model-pricing.yaml` (see "Cost accounting"). Never write `0.0` for a priced role; if pricing fails, still insert and run `python3 scripts/reprice.py` before closing the slot.
-- `worker_reports` — one row per subagent return. Every worker writes a prose journal to `workspace/.state/<owner>_<repo>/<n>/journals/<role>-round<N>.md` before returning. Right after the `Agent` returns, INSERT the row using SQLite's `readfile()` builtin for the two large TEXT fields — the CLI's argv `?` binding does not carry multi-line values reliably, so drop them into temp files and read them back with `readfile()`:
-  ```
-  rt=$(mktemp) && printf '%s' "$return_text_from_agent" > "$rt"
-  jf="$abs_journal_path"   # may or may not exist
-  jexpr=$([ -f "$jf" ] && echo "readfile('$jf')" || echo "NULL")
-  jpath=$([ -f "$jf" ] && echo "'$rel_journal_path'" || echo "NULL")
-  sqlite3 workspace/.state/audit.sqlite <<SQL
-  INSERT INTO worker_reports(slot_id, ticket_ref, role, round, return_text, journal, journal_path, ts)
-  VALUES ('$slot_id','$ticket_ref','$role',$round, readfile('$rt'), $jexpr, $jpath, '$ts');
-SQL
-  rm -f "$rt"
-  ```
-  Only shell-safe values (slot_id, ticket_ref, role, round, ts, paths without single quotes) go inline; all free-form TEXT arrives through `readfile()` on a temp file. Same pattern for any other INSERT where a value could contain newlines, quotes, or backticks — commit messages, comment bodies, verdict comment text, gated-call command strings all deserve this treatment. If the journal file is missing, `readfile()` would error, so branch as shown above and let `journal` be `NULL` — do not treat missing journal as slot failure, just note it in the `events.return` row's `note` column.
-- `gated_calls` — every command you print under `[dry-run]` also inserts here. Skip in live mode.
-
-At the end of every invocation THAT INSERTED A SLOT ROW, close the slot with one UPDATE. With fan-out enabled, the slot row aggregates across every dispatched ticket in this slot's set (up to `roles.concurrency`):
-
-```
-UPDATE slots SET
-  ended_at        = <ISO now>,
-  wall_ms         = <whole-slot wall time — from slot start to the moment the last subagent returned>,
-  ticket_ref      = <the LAST ticket touched, same rule as before>,
-  outcome         = <'finished'|'error'>,
-  progress_note   = <one-line summary of what this slot advanced, naming every ticket touched>,
-  gated_calls     = <SUM across all dispatched tickets>,
-  envelope_writes = <SUM across all dispatched tickets>
-WHERE slot_id = <this slot>;
-```
-
-`envelope_writes` and `gated_calls` are slot-wide totals — sum the per-ticket counters as each subagent returns. `wall_ms` is the whole-slot wall time (not the longest subagent's), because that is what the dashboard uses to plot slot duration. `ticket_ref` still records only the LAST ticket touched, for backward compatibility with the single-ticket dashboard columns; the per-ticket detail lives in the `events`, `costs`, and `worker_reports` rows keyed on `ticket_ref`.
-
-Cost rows stay per-ticket: each subagent return inserts its own `costs` row keyed on `slot_id` + `ticket_ref` + `role`, so the ledger aggregates cost the right way when several tickets committed in the same slot. Do NOT collapse them into a slot-level cost.
-
-Slot outcome is only ever `finished` or `error`. `error` covers the case where any dispatched ticket blew up in a way that stopped its worker from returning cleanly — the other tickets in the set still get their per-ticket rows written; the slot-level outcome is `error` if any one ticket errored. The slot is done as soon as your invocation returns — a slot never "waits", it just wraps up. Any future work on the same ticket happens in a new slot. Ticket-level state (done / awaiting-author / escalated) lives on the ticket and in the envelope, not on the slot row.
-
-**Regenerate the dashboard on close.** After the closing UPDATE lands (regardless of `outcome`, and regardless of whether the slot chained per rule 11a or fanned out to several tickets), run `bash dashboard/generate.sh` exactly ONCE per slot from the project root. It reads `workspace/.state/audit.sqlite` and writes `dashboard/index.html` in ~1 second, keeping the static HTML dashboard in step with the ledger so a human refreshing the tab sees the slot that just finished. Do NOT invoke it per dispatched ticket — one slot, one regen, at the end. Failures are logged (`"dashboard regen failed: <stderr>"`) but do NOT alter the slot outcome — the ledger is the source of truth; the HTML is a view. Skip in dry-run mode.
+A slot ends either finished or in error. Error covers the case where any dispatched ticket blew up in a way that stopped its worker from returning cleanly; the other tickets in the set still get processed. The slot is done as soon as your invocation returns — a slot never "waits", it just wraps up. Any future work on the same ticket happens in a new slot. Ticket-level state (done / awaiting-author / escalated) lives on the ticket and in the envelope, not on the slot.
 
 **Non-committing chaining (rule 11a).** An iteration only **commits** the slot to a ticket when it did real work: pushed a branch, opened / edited a PR, or dispatched a coder / tester / reviewer / docs subagent. Anything else — a zero-write iteration (dormant `awaiting-author` per rule 12b, a MERGEABLE own-PR with nothing on rule 8a's action list, a queue candidate filtered by rule 5 / `rules.yaml` at intake) OR a comment-only iteration (only `gh issue comment` / `gh pr comment` / `gh pr review --body ...` / `gh pr edit --body-file` / a rule 4a linked-issue progress note) — does NOT commit the slot. In both cases the manager jumps back to the pick step (own-PR check first, then the rule 8 pipeline) and takes another candidate in the SAME slot.
 
-Reuse the same `slot_id` for every chained iteration; each writes its own `events` rows (`intake`, `comment_posted`, `phase_change`) tagged with an incrementing `chain_index` so the dashboard can group them. Do NOT insert a second `slots` row.
+Reuse the same `slot_id` for every chained iteration.
 
-Cap at FIVE chained iterations per slot (committing or not); on the sixth, close the slot and let the next cron tick continue. A chained pick that turns into real work ends the chain — the slot commits to that ticket and closes on its normal outcome. Only close the slot as "nothing to do this slot" when the pick loop returns EMPTY — every reachable candidate is filtered, dormant, or Second-Foundation-owned and non-actionable. Non-actionable in-flight envelopes are NOT a reason to stop; they are a reason to fall through.
+Cap at FIVE chained iterations per slot (committing or not); on the sixth, end the slot and let the next cron tick continue. A chained pick that turns into real work ends the chain — the slot commits to that ticket and ends on its normal outcome. Only end the slot as "nothing to do this slot" when the pick loop returns EMPTY — every reachable candidate is filtered, dormant, or Second-Foundation-owned and non-actionable. Non-actionable in-flight envelopes are NOT a reason to stop; they are a reason to fall through.
 
-On close, `progress_note` names every ticket touched in order (e.g. `"#4282 dormant, #4442 mergeable-waiting; picked up review of #4451, posted the initial disclosure."`), and `ticket_ref` records the LAST ticket the slot touched.
+The slot's closing summary line names every ticket touched in order (e.g. `"#4282 dormant, #4442 mergeable-waiting; picked up review of #4451, posted the initial disclosure."`).
 
-`progress_note` is the ONE line the dashboard shows to explain what a slot did. Write it the way you would tell a teammate in Slack — plain human sentences, the actual outcome first, mechanics only when they add signal. No role names, no round numbers, no cost data. Full stop at the end.
+The summary line is the ONE line a human reads in the routine's transcript to know what a slot did. Write it the way you would tell a teammate in Slack — plain human sentences, the actual outcome first, mechanics only when they add signal. No role names, no round numbers, no cost data. Full stop at the end.
 
 Good:
 
@@ -138,13 +64,9 @@ Bad — do not write it like this:
 - `"finished"` (says nothing)
 - `"reviewer round 0: approve. Cost: $3.80"` (leaks cost — rule 20)
 
-The details a curious reader wants (which role ran, how many rounds, tokens) all live in the slot-detail expand on the dashboard. `progress_note` is the summary sentence, not the log.
+The details a curious reader wants (which role ran, how many rounds) live in the envelope `history` and the role journals. The summary line is the summary sentence, not the log.
 
-If a slot inserted a row and then blew up before doing meaningful work (network failure fetching state, subagent failed to start), close it with `outcome='error'` and a `progress_note` naming what broke; do not leave `ended_at` null.
-
-DB write shape: use the `sqlite3 workspace/.state/audit.sqlite` binary with `-cmd ".parameter set …"` and parameterized SQL when the value could contain quotes or newlines, or the `.import` command with a tab-separated stdin. Never build SQL by string concatenation for values that could contain unbalanced quotes.
-
-If a DB write fails, log a warning line but do NOT abort the slot. The envelope on disk is the source of truth for phase progression; the audit DB is a dashboard feed.
+If a slot blew up before doing meaningful work (network failure fetching state, subagent failed to start), say so in the summary line, naming what broke.
 
 ### Startup checks (in order, fail-fast)
 
@@ -164,22 +86,27 @@ Before QA, look for PRs where a maintainer asked us to review again: `agent.gith
 
 #### Build turn or review turn (rules 8 and 8c)
 
-After rule 8e, work out whether this slot is a build turn or a review turn. Build work is a slot committed on an issue, on a self-sourced rule 8f ticket, or on one of our own PRs (`tickets.kind = 'issue'`, or `kind = 'pr'` with `third_party = 0`). Review work is a slot committed on QA or on a review of someone else's PR. Count the build slots since the last review slot:
+After rule 8e, work out whether this slot is a build turn or a review turn by reading our own recent activity on GitHub. Nothing is kept locally for this.
 
-```sql
-SELECT COUNT(*) FROM slots s
-  JOIN tickets t ON t.ticket_ref = s.ticket_ref
- WHERE s.outcome = 'finished'
-   AND (t.kind = 'issue' OR t.third_party = 0)
-   AND s.ended_at > COALESCE(
-     (SELECT MAX(s2.ended_at) FROM slots s2
-        LEFT JOIN tickets t2 ON t2.ticket_ref = s2.ticket_ref
-       WHERE s2.outcome = 'finished' AND s2.ticket_ref IS NOT NULL
-         AND COALESCE(t2.kind, 'pr') = 'pr' AND COALESCE(t2.third_party, 1) = 1),
-     '1970-01-01T00:00:00Z');
+- **Build action:** a PR opened by `agent.github_user` (at its `createdAt`), or a later push by it to one of its own PR branches (commits with a committer date after the PR's `createdAt`; commits that share one committer timestamp, as after a rebase, count as one push).
+- **Review action:** a review `agent.github_user` submitted on someone else's PR (at its `submitted_at`), or a `QA verification` comment it posted (at its `created_at`).
+
+Collect today's actions (UTC) across the `repositories[]` entries; reach back a day if today has fewer than `pipeline.builds_per_review_slot + 1` of them:
+
+```
+# build: our PRs, then the commits on each
+gh search prs --author=<agent.github_user> --created=">=<date>" --json repository,number,createdAt --limit 50
+gh search prs --author=<agent.github_user> --state open --updated=">=<date>" --json repository,number --limit 50
+gh api repos/<o>/<r>/pulls/<n>/commits --jq '.[].commit.committer.date'
+# review: our reviews on other people's PRs
+gh api -X GET search/issues -f q='is:pr reviewed-by:<agent.github_user> -author:<agent.github_user> updated:>=<date>' --jq '.items[] | .repository_url + " " + (.number|tostring)'
+gh api repos/<o>/<r>/pulls/<n>/reviews --jq '.[] | select(.user.login=="<agent.github_user>") | .submitted_at'
+# QA: our QA verification comments
+gh search issues "QA verification" --commenter=<agent.github_user> --updated=">=<date>" --include-prs --json repository,number --limit 50
+gh api repos/<o>/<r>/issues/<n>/comments --jq '.[] | select(.user.login=="<agent.github_user>" and (.body|contains("QA verification"))) | .created_at'
 ```
 
-Below `config.pipeline.builds_per_review_slot` (default 2; `0` means always a build turn) it is a **build turn**; otherwise a **review turn**. Log `turn=build|review count=<n>` in the slot's event stream. Every slot-committing pick must upsert its `tickets` row with `kind` and `third_party` set, or the count is wrong.
+Sort the actions by time, keep the most recent `pipeline.builds_per_review_slot + 1`, and count the build actions newer than the latest review action among them. Below `config.pipeline.builds_per_review_slot` (default 2; `0` means always a build turn) it is a **build turn**; otherwise a **review turn**. If the count cannot be worked out (a lookup fails, rate limit), call it a build turn. Log `turn=build|review count=<n>` in the slot summary.
 
 The sections below are written in the order QA, in-flight, own PRs, pipeline. Follow them in the turn's order instead:
 
@@ -232,9 +159,9 @@ The board holds 500+ items and `item-list` silently stops at `--limit`, newest c
    Checks still running get no comment; just skip. Before treating CI as waiting on authorization, confirm approval is really outstanding: for each run on the head SHA, `gh api repos/<repo>/actions/runs/<id>/pending_deployments` must return at least one entry, or the run must have concluded `action_required`. A queued or `waiting` run / `authorize` job with no pending deployment is already approved and just waiting for a runner: that is "still running", no comment. Only when approval is outstanding and we have not already pinged at this head SHA, post on the PR (rule 13 block on top): `@Itxaka the CI for this PR is waiting on approval. Could you authorize the run so it can go through QA?` Then skip. Each of these pings goes out once per head SHA: look for our earlier comment of the same kind posted after the head commit date before posting another. They are comment-only actions (rule 11a).
 8. **We can QA it end to end.** Skip if verifying needs hardware or an environment we do not have (GPU, NVIDIA/Jetson, Raspberry Pi or other boards, a physical TPM, macOS, cloud-only bootloader or provider paths), or if you cannot tell from the issue and PR what to verify. The test has to be a VM boot of a build from the PR; if that cannot exercise the claim, skip.
 
-If no card qualifies, fall through to the in-flight envelopes below. Do not open a slot row for an empty QA pass.
+If no card qualifies, fall through to the in-flight envelopes below. An empty QA pass is not work.
 
-**Claim.** Open the slot row, upsert the `tickets` row (`kind` = `issue`/`pr` as fetched), create the envelope with `phase: qa`, and record `envelope.qa = {item_id, card_type, tested_ref: null, result: null}`. Post the claim on the card's ticket (rule 13 block on top):
+**Claim.** Create the envelope with `phase: qa`, and record `envelope.qa = {item_id, card_type, tested_ref: null, result: null}`. Post the claim on the card's ticket (rule 13 block on top):
 
 ```
 gh issue comment <n> --repo <repo> --body "<disclosure>
@@ -250,9 +177,9 @@ QA in progress: I'm testing this now. Results and proof will follow here."
 - What is tested is always the PR: `tested_ref` is its head SHA (`headRefOid`) while open, or its merge commit once merged. The "before" build is the merge base on the default branch (or the merge commit's parent).
 - Record `envelope.qa.issue` and `envelope.qa.pr` (numbers, repo, and the board `item_id` of each that is on the board).
 
-Create the per-ticket worktree (rule 7a), then dispatch `kairos-triage-tester` with phase `qa`. It builds an ISO for "before" and for `tested_ref`, boots both under QEMU, reproduces the problem on "before" and confirms it is gone on `tested_ref`. Synthetic checks (unit tests, containers) may back that up but never replace it. It writes `envelope.qa.result` (`pass` / `fail` / `skip`), `envelope.qa.summary`, and its artifacts. Record `dispatch`/`return` events, `costs` and `worker_reports` as for any other role.
+Create the per-ticket worktree (rule 7a), then dispatch `kairos-triage-tester` with phase `qa`. It builds an ISO for "before" and for `tested_ref`, boots both under QEMU, reproduces the problem on "before" and confirms it is gone on `tested_ref`. Synthetic checks (unit tests, containers) may back that up but never replace it. It writes `envelope.qa.result` (`pass` / `fail` / `skip`), `envelope.qa.summary`, and its artifacts. Record its cost as for any other role (see "Cost accounting").
 
-**Skip result.** If the tester returns `skip` (no end-to-end check was possible after all), edit the claim comment to say we are leaving QA on this to someone else and why, in one line. No label, no move. Set the envelope to `done` with `envelope.qa.result = skip` and close the slot.
+**Skip result.** If the tester returns `skip` (no end-to-end check was possible after all), edit the claim comment to say we are leaving QA on this to someone else and why, in one line. No label, no move. Set the envelope to `done` with `envelope.qa.result = skip` and end the slot.
 
 **Report.** Upload the tester's screenshots to `itxaka-agent/triage-assets` under `<owner>/<issue-or-pr n>/qa-<name>.<ext>` (rule 3a conventions). Post the full `QA verification` comment on the **issue**: what was tested (PR number and `tested_ref`), `QA: pass` / `QA: fail`, why, and the embedded proof. Keep it short (rule 9a.iii). On the **PR**, post a one-liner linking to that issue comment, e.g. `QA: pass at <sha>, details and proof: <issue comment URL>`. If the PR has no linked issue, the full comment goes on the PR. Both comments carry the rule 13 block.
 
@@ -270,7 +197,7 @@ gh project item-edit --project-id PVT_kwDOBrVfSM4AGI3D --id <item_id> \
   --field-id PVTSSF_lADOBrVfSM4AGI3DzgDia1k --single-select-option-id 73ee4854
 ```
 
-(`gh issue edit` works on PR numbers too.) When the repo has no `QA:` labels, skip the label and note it in the audit summary; still move the card. Confirm every move with `gh issue view <n> --json projectItems`. Insert an `events` row with `action='qa_verdict'` and `note=<result>`, set the envelope to `done`, and close the slot. `progress_note` names the card and the outcome, e.g. `"QA'd #5095: the FIPS leg no longer rebuilds the kernel. Passed, moved to QA OK."`.
+(`gh issue edit` works on PR numbers too.) When the repo has no `QA:` labels, skip the label and note it in the audit summary; still move the card. Confirm every move with `gh issue view <n> --json projectItems`. Set the envelope to `done` and end the slot. The summary line names the card and the outcome, e.g. `"QA'd #5095: the FIPS leg no longer rebuilds the kernel. Passed, moved to QA OK."`.
 
 #### In-flight envelopes
 
@@ -282,13 +209,13 @@ Look for an in-flight envelope (on a build turn, before QA; on a review turn, af
 gh pr view <n> --repo <owner>/<repo> --json headRefOid,updatedAt,comments,reviews
 ```
 
-Compare against `envelope.meta.last_seen.head_sha` and the timestamp of our last posted comment/review. If `headRefOid` is unchanged AND there are no comments or reviews from a non-Second-Foundation login newer than our last one, the envelope is DORMANT — update `envelope.meta.last_seen.checked_at` in place (so a human can see we looked), do NOT open a slot row for it, do NOT count as work, and fall through to the next queue item (own-PR check, then rule 8 pipeline). If the envelope has been dormant for 7 days or more, escalate it per rule 18 instead of skipping.
+Compare against `envelope.meta.last_seen.head_sha` and the timestamp of our last posted comment/review. If `headRefOid` is unchanged AND there are no comments or reviews from a non-Second-Foundation login newer than our last one, the envelope is DORMANT — update `envelope.meta.last_seen.checked_at` in place (so a human can see we looked), do NOT count it as work, and fall through to the next queue item (own-PR check, then rule 8 pipeline). If the envelope has been dormant for 7 days or more, escalate it per rule 18 instead of skipping.
 
 If the envelope IS non-dormant (author pushed, or a human commented), resume it normally.
 
 Take up to `roles.concurrency` (read it from `config/config.yaml`; currently 1) non-dormant in-flight envelopes as this slot's tickets — one manager fans out at most that many workers per slot. If more than that exist, work the 6 oldest (by envelope `meta.first_seen_at`) and let the rest wait for the next slot. The old "escalate extras" rule is retired — multiple in-flight envelopes is now the designed state, not an error.
 
-**Dedupe by repo before dispatch.** Two candidates on the same `<owner>/<repo>` cannot run in the same slot: the per-slot worktree pattern `workspace/<repo>-slot<slot_seq>-<n>` still shares the repo's shared object store, and two concurrent workers on the same repo would race on `git fetch --prune` and on the pack files. Walk the collected in-flight envelopes in age order and skip any whose repo already appears in the accepted set; the skipped ones stay in flight and are picked up next slot.
+**Dedupe by repo before dispatch.** Two candidates on the same `<owner>/<repo>` cannot run in the same slot: the per-slot worktree pattern `workspace/<repo>-slot<slot_id>-<n>` still shares the repo's shared object store, and two concurrent workers on the same repo would race on `git fetch --prune` and on the pack files. Walk the collected in-flight envelopes in age order and skip any whose repo already appears in the accepted set; the skipped ones stay in flight and are picked up next slot.
 
 On a build turn, check own open PRs first (rule 8a), before in-flight envelopes; on a review turn, after them:
 
@@ -304,7 +231,7 @@ For each returned PR, decide if it needs action:
 - **CI red** — any `statusCheckRollup[].conclusion` is `'FAILURE'` or `'TIMED_OUT'`. Pull the run's log with `gh run view <run-id> --repo <owner>/<repo> --log-failed`, dispatch the coder (and tester if a test suite is involved) to fix, commit, `git push origin <branch>` (no force). Create a fresh envelope for the fixup work, scoped to just this PR's branch.
 - **Reviewer requested changes** — `reviewDecision == 'CHANGES_REQUESTED'`, or `gh pr view <n> --json comments,reviews` shows new comments/reviews since `headRefOid` was last pushed. Dispatch the coder with the reviewer comments attached; commit and push.
 - **Merge conflict** — `mergeable == 'CONFLICTING'`. Rebase locally onto `upstream/<default>`, resolve, `git push --force-with-lease origin <branch>`. Force-with-lease is fine on our own fork branch (rule 1's force-push ban targets other contributors' branches on upstream).
-- **Closed unmerged** — the PR was closed by someone else. Log to the audit trail, drop the ticket, do NOT reopen or comment.
+- **Closed unmerged** — the PR was closed by someone else. Note it in the slot summary, drop the ticket, do NOT reopen or comment.
 
 If none of those hold — the PR is `MERGEABLE`, no failing checks, `reviewDecision` is `null` / `APPROVED` / `REVIEW_REQUIRED` — do NOTHING for this slot on that PR. Sitting on a maintainer is not a reason to comment; skip and continue to the next own PR or to the rule 8 pipeline.
 
@@ -325,7 +252,7 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
    - Enumerate open issues on `kairos-io/kairos` matching `release_meta.detection` (label OR title regex).
    - Extract each meta's semver from its title. Query `gh api repos/kairos-io/kairos/git/refs/tags/<tag_prefix><version>` to see which tags already exist. Drop those.
    - Sort ascending. Take the lowest remaining. Parse its body and every comment through `release_meta.reference_patterns` to produce the priority reference set.
-4. Apply the pipeline (rule 8) in the turn's order: on a build turn `triage_issues` then rule 8f, then `review_prs` only if both are empty; on a review turn `review_prs` first, then the build order. Every slot-committing pick MUST upsert a `tickets` row at commit time with `kind` (`'issue'` or `'pr'`) and, for PRs, `third_party` (0 for ours, 1 otherwise), or the turn count above goes wrong.
+4. Apply the pipeline (rule 8) in the turn's order: on a build turn `triage_issues` then rule 8f, then `review_prs` only if both are empty; on a review turn `review_prs` first, then the build order.
 5. Inside each stage, drain the priority set first, then fall back to everything else. **`triage_issues` label priority (rule 8c):** (a) release-meta priority set, (b) unassigned issues carrying `bug` (oldest first), (c) every other unassigned issue regardless of label (oldest first). Rung (c) only fires when (a) and (b) are empty; `rules.yaml` skip labels still gate every rung. A pure-discussion `epic`, a stalled `spike`, or anything with no concrete deliverable is walked past like a skip-labelled ticket (log the reason, move on) — the turn does not force a pick, it only orders the stages.
 6. Inside each candidate, apply `config/rules.yaml`:
    - Skip anything assigned to a human that is not `agent.github_user` (rule 5). Self-assignment carve-out: if the assignee set is exactly `[<ticket_author>]`, treat the ticket as unassigned. If any assignee is neither the agent nor the author, skip.
@@ -386,31 +313,13 @@ For the ticket you picked:
    Do NOT `reset --hard` / `clean -fdx` / `checkout` on `workspace/<repo>` itself: the slot works on a private worktree (4b), and another slot may already have branches checked out on it. The shared clone stays on the default branch, untouched.
 4b. **Per-ticket git worktree.** Every ticket in this slot's fanned-out set works in its own isolated checkout so parallel workers (up to `roles.concurrency`) do not stomp each other's branch state (and so two managers on overlapping repos in successive slots stay isolated too). Create it right before dispatching the worker for that ticket:
    ```
-   WT="$PWD/workspace/<repo>-slot<slot_seq>-<pr_or_issue_number>"   # absolute: `git -C` resolves a relative path inside workspace/<repo>/
+   WT="$PWD/workspace/<repo>-slot<slot_id>-<pr_or_issue_number>"   # absolute: `git -C` resolves a relative path inside workspace/<repo>/
    git -C workspace/<repo> worktree add --detach "$WT" upstream/<default_branch> \
      || git -C workspace/<repo> worktree add "$WT" upstream/<default_branch>
    git -C "$WT" reset --hard upstream/<default_branch>
    git -C "$WT" clean -fdx
    ```
    All subsequent `git`, `docker build`, test runs, and `git push origin <branch>` for that ticket use its `$WT`, not `workspace/<repo>`. Record the path in the ticket's `envelope.meta.worktree` so the audit trail can point at what was actually built. As soon as each subagent returns (per rule 7a), tear its worktree down: `git -C workspace/<repo> worktree remove --force "$WT"`. Chained iterations for the same ticket inside one slot reuse the same worktree — check it exists before recreating. Because the slot dedupes candidates by repo (see the escalate-extras block above), no two per-ticket worktrees inside one slot ever target the same `<repo>`.
-4c. **Audit DB in WAL mode.** At slot startup, ensure `workspace/.state/audit.sqlite` is in WAL journal mode so two slots can commit rows simultaneously without one blocking the other on the file lock. Idempotent:
-   ```
-   sqlite3 workspace/.state/audit.sqlite \
-     "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;" >/dev/null
-   ```
-   The pragma is persistent on the DB file, so this is a no-op on every slot after the first, but running it every time keeps a fresh clone from silently regressing to `delete` mode.
-
-   **HARD RULE: every multi-statement write to `workspace/.state/audit.sqlite` MUST be wrapped in `BEGIN IMMEDIATE; ... COMMIT;`.** With fan-out enabled, the manager writes several `events` / `costs` / `worker_reports` rows in quick succession as each parallel subagent returns; without `BEGIN IMMEDIATE` around the batch, SQLite serializes them at statement granularity and readers or concurrent writers can trip `SQLITE_BUSY`. Concretely:
-   ```
-   sqlite3 workspace/.state/audit.sqlite <<SQL
-   BEGIN IMMEDIATE;
-   INSERT INTO events(...) VALUES (...);
-   INSERT INTO costs(...) VALUES (...);
-   INSERT INTO worker_reports(...) VALUES (...);
-   COMMIT;
-   SQL
-   ```
-   Single-statement writes (one INSERT, one UPDATE) do not need the wrapper — SQLite's implicit transaction is enough — but the moment two or more statements are grouped, `BEGIN IMMEDIATE` is mandatory. Never open a long-lived write transaction; keep the block short (open, insert, commit) so other writers can proceed.
 5. Fetch upstream, fast-forward the default branch on the fork, push the updated default to the fork (rule 7). Create the working branch: `triage/<n>-<slug>` for issues, `review-repro/<n>` for PRs.
 6. For PRs, check the author login. Record it in `envelope.pre_review.pr_author` (the reviewer keys the rule 9a.i walkthrough mode off this field). If it is not `agent.github_user`, set `envelope.pre_review.third_party = true`. This gates the coder/tester/docs branches of the state machine — see "Third-party PRs" below.
 
@@ -438,12 +347,12 @@ For each accepted ticket in this slot's set (up to `roles.concurrency`), reload 
 
 **Parallel fan-out.** Fire ALL prepared dispatches in a SINGLE `Agent`-tool block — that is Claude Code's mechanism for parallel tool calls. One block with N `Agent` invocations (N ≤ 6) means the workers run concurrently; the block resolves when the last one returns, at which point the manager collects every worker's output. Do NOT loop and dispatch one at a time — that reverts to serial execution and defeats the fan-out. If N == 1 for this slot (only one candidate qualified), the block still holds exactly one call; the shape is uniform.
 
-After the block resolves, walk the returns in a stable order (accepted-set order) and process each one — re-read its envelope, append reviewer verdicts to `history`, advance `phase`, insert per-ticket `events` / `costs` / `worker_reports` rows (batched under one `BEGIN IMMEDIATE`/`COMMIT` per ticket), and tear down the per-ticket worktree. A worker that errored is handled per that ticket only — the other returns still process normally; the slot-level `outcome` becomes `error` only if any one ticket errored.
+After the block resolves, walk the returns in a stable order (accepted-set order) and process each one — re-read its envelope, append reviewer verdicts to `history`, advance `phase`, record its cost (see "Cost accounting"), and tear down the per-ticket worktree. A worker that errored is handled per that ticket only — the other returns still process normally; the slot ends in error only if any one ticket errored.
 
 Every dispatch prompt must include:
 
 - The absolute path to the ticket's envelope.
-- The absolute path to the ticket's per-slot worktree (`workspace/<repo>-slot<slot_seq>-<pr_or_issue_number>`), NOT the shared clone.
+- The absolute path to the ticket's per-slot worktree (`workspace/<repo>-slot<slot_id>-<pr_or_issue_number>`), NOT the shared clone.
 - The upstream ticket URL (issue or PR).
 - The current round number.
 - Any prior reviewer comments if this is a repeat pass through `coding`/`testing`/`docs`.
@@ -459,7 +368,7 @@ Agents to spawn per phase:
 
 The coder, tester, and docs subagents update the envelope on disk and return a short summary. The reviewer does NOT write to the envelope — it returns a fenced JSON verdict block in its final text (see `.claude/agents/kairos-triage-reviewer.md`), and you append that block to `envelope.history` yourself. The reviewer's tool set is intentionally read-only. The builder is dispatched *after* the reviewer during the same `reviewing` phase, one call per flagged finding; each builder call writes its own journal under `journals/builder-round<N>-<slug>.md` and returns a `verdict:` line the manager uses to keep, drop, or defer the finding.
 
-**Cached-verdict short-circuit.** Before dispatching the reviewer for round `N`, check `envelope.history` for an entry whose `round == N`. If one exists — typically because a prior slot ran the reviewer in dry-run and the manager did not get to publish — skip the `Agent` call, log `reusing cached verdict from round N (skipped reviewer dispatch)`, and proceed to consume the verdict as if the reviewer had just returned. This keeps token cost off the second slot when the first slot already produced a valid verdict but did not post. `costs` still gets a zero-token row for the reviewer so the ledger reflects the reuse. The same rule applies for the coder / tester / docs on any round they already have artifacts committed for, though in practice only the reviewer benefits — those roles produce commits, not opinions, and re-running them is usually cheap or necessary.
+**Cached-verdict short-circuit.** Before dispatching the reviewer for round `N`, check `envelope.history` for an entry whose `round == N`. If one exists — typically because a prior slot ran the reviewer in dry-run and the manager did not get to publish — skip the `Agent` call, log `reusing cached verdict from round N (skipped reviewer dispatch)`, and proceed to consume the verdict as if the reviewer had just returned. This keeps token cost off the second slot when the first slot already produced a valid verdict but did not post. `budget.json` still gets a zero-token reviewer entry so the ledger reflects the reuse. The same rule applies for the coder / tester / docs on any round they already have artifacts committed for, though in practice only the reviewer benefits — those roles produce commits, not opinions, and re-running them is usually cheap or necessary.
 
 For every subagent call you:
 
@@ -485,12 +394,12 @@ On `reviewing`:
 When the builder returns, its journal ends with a `verdict:` line. Apply it:
 
 - `verdict: confirmed` — the finding survives. Prepend the builder's `one-line:` string to the finding's `problem` field so the published comment quotes the empirical evidence, and add the journal path to `envelope.artifacts` with `kind='builder_journal'`.
-- `verdict: contradicted` — drop the finding from `comments[]` entirely before publication. Log the retraction in the audit ledger (`events` role=`manager` action=`finding_dropped`, note=`reason=builder-contradicted claim="<claim>" journal=<path>`), and add the journal to `envelope.artifacts`. Do NOT publish the finding.
-- `verdict: inconclusive` — drop the finding from `comments[]` for this round with an event-log note; if it materially blocks approval you may re-raise it next round with more context, but never publish an inconclusive builder finding as a live blocker.
+- `verdict: contradicted` — drop the finding from `comments[]` entirely before publication. Record the retraction in `envelope.history` (`reason=builder-contradicted claim="<claim>" journal=<path>`), and add the journal to `envelope.artifacts`. Do NOT publish the finding.
+- `verdict: inconclusive` — drop the finding from `comments[]` for this round with a note in `envelope.history`; if it materially blocks approval you may re-raise it next round with more context, but never publish an inconclusive builder finding as a live blocker.
 
-If dropping a finding leaves `comments[]` empty and the reviewer's `verdict` was `changes-requested`, promote the verdict to `approve` for this round (write the promotion into `envelope.history`, and log `events` action=`verdict_promoted`). This is the intended outcome when the sole blocker was a toolchain misread — the reviewer would have said `approve` if it had the builder's evidence at verdict time.
+If dropping a finding leaves `comments[]` empty and the reviewer's `verdict` was `changes-requested`, promote the verdict to `approve` for this round (write the promotion into `envelope.history`). This is the intended outcome when the sole blocker was a toolchain misread — the reviewer would have said `approve` if it had the builder's evidence at verdict time.
 
-Track builder cost the same way you track reviewer cost: read `subagent_tokens` from the Agent result, price it via `config/model-pricing.yaml` under the `builder` role (fall back to the reviewer's model price if `builder` is not listed), and add a row to `costs` and `worker_reports`. Builder runs are per-finding, not per-slot, so several may appear in one slot's `costs` view — that is expected.
+Track builder cost the same way you track reviewer cost: read `subagent_tokens` from the Agent result, price it via `config/model-pricing.yaml` under the `builder` role (fall back to the reviewer's model price if `builder` is not listed), and append a `builder` entry to the ledger. Builder runs are per-finding, not per-slot, so one slot may add several builder entries — that is expected.
 
 ### Third-party PRs
 
@@ -502,7 +411,7 @@ A PR whose author is not `agent.github_user` is third-party (Renovate, human con
   ```
   gh pr view <n> --repo <owner>/<repo> --json projectItems --jq '.projectItems[] | select(.title | test("Issue tracking board")) | .status.name'
   ```
-  If the status (case-insensitive, trailing emoji/whitespace stripped) is `QA`, `QA OK`, or `Done`, leave it — do not move a PR backwards. Otherwise run the same two calls as Finalize step 2a (`gh project item-add 1 --owner kairos-io --url <pr_url> ...` then `gh project item-edit ... --single-select-option-id 3f5385f2`); `item-add` returns the existing item id when the PR is already on the board, so it is safe to run unconditionally. Log both call outcomes in `events`; if either fails, do NOT retract the review — record the failure in the audit summary and continue. Gate both calls in dry-run like every other `gh` write. Never on `changes-requested`, never on a rule 6a comment-only reply.
+  If the status (case-insensitive, trailing emoji/whitespace stripped) is `QA`, `QA OK`, or `Done`, leave it — do not move a PR backwards. Otherwise run the same two calls as Finalize step 2a (`gh project item-add 1 --owner kairos-io --url <pr_url> ...` then `gh project item-edit ... --single-select-option-id 3f5385f2`); `item-add` returns the existing item id when the PR is already on the board, so it is safe to run unconditionally. If either fails, do NOT retract the review — record the failure in the audit summary and continue. Gate both calls in dry-run like every other `gh` write. Never on `changes-requested`, never on a rule 6a comment-only reply.
 - On `changes-requested`: post the review AND every per-finding comment as inline diff comments in a single API call — this is rule 12a. Assemble the payload as:
   ```
   gh api /repos/<owner>/<repo>/pulls/<n>/reviews -X POST \
@@ -545,12 +454,12 @@ When dispatching coder, tester or docs, do NOT paste the trailer block, the co-a
      --field-id PVTSSF_lADOBrVfSM4AGI3DzgDia1k \
      --single-select-option-id 3f5385f2
    ```
-   The single-select-option-id `3f5385f2` is the "QA" status. A human on the QA rotation picks up items in that column and verifies them. Log both call outcomes in the `events` table; if either fails, do NOT roll back the PR — record the failure, post a one-line note in the PR body saying the QA board add failed and someone needs to add it manually, and continue. In dry-run mode, gate both calls under the audit banner like every other `gh` write. Skip here for third-party PRs (their board move happens on approve, in "Third-party PRs"), for fixup pushes on already-open PRs (rule 8a), and for `gh pr create --draft`.
-2b. **Attach the rule 14a test-run screenshot.** Whenever the coder or tester ran a test suite manually for this PR (`go test`, `npm test`, `pytest`, `make test`, …), post a `test run` PR comment before step 3. It carries the rule 13 disclosure block, a one-line caption naming the command and commit sha, and an embedded PNG. In a worktree at the PR head (absolute path), run `git rev-parse HEAD; date -Iseconds; <test command>` and capture the terminal tail ending in the suite's summary line as a PNG. Upload it to `itxaka-agent/triage-assets` at `<repo>/<pr_n>/<name>.png`, embed it with a `raw.githubusercontent.com` URL, and list its blob sha. Log `artifacts` rows (`screendump`, `issue_comment`). When the QEMU verification comment (rule 3a) also applies, put the screenshot in that comment instead. This step is required: an own PR with manual test runs and no screenshot is incomplete. Gate it in dry-run like every other `gh` write.
+   The single-select-option-id `3f5385f2` is the "QA" status. A human on the QA rotation picks up items in that column and verifies them. If either fails, do NOT roll back the PR — record the failure, post a one-line note in the PR body saying the QA board add failed and someone needs to add it manually, and continue. In dry-run mode, gate both calls under the audit banner like every other `gh` write. Skip here for third-party PRs (their board move happens on approve, in "Third-party PRs"), for fixup pushes on already-open PRs (rule 8a), and for `gh pr create --draft`.
+2b. **Attach the rule 14a test-run screenshot.** Whenever the coder or tester ran a test suite manually for this PR (`go test`, `npm test`, `pytest`, `make test`, …), post a `test run` PR comment before step 3. It carries the rule 13 disclosure block, a one-line caption naming the command and commit sha, and an embedded PNG. In a worktree at the PR head (absolute path), run `git rev-parse HEAD; date -Iseconds; <test command>` and capture the terminal tail ending in the suite's summary line as a PNG. Upload it to `itxaka-agent/triage-assets` at `<repo>/<pr_n>/<name>.png`, embed it with a `raw.githubusercontent.com` URL, and list its blob sha. Add the screenshot path to `envelope.artifacts`. When the QEMU verification comment (rule 3a) also applies, put the screenshot in that comment instead. This step is required: an own PR with manual test runs and no screenshot is incomplete. Gate it in dry-run like every other `gh` write.
 3. Compose the audit summary from the envelope. Human-readable, chronological, one row per phase-round, listing role, commit shas / test paths / doc paths / log paths, and reviewer verdicts.
 4. Run the redactor from `audit.redact`: replace `$HOME` with `~`, MAC addresses with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs with `x.x.x.x`, and every `audit.redact.token_shapes` regex match with `<redacted>`. Run on both the summary and the envelope JSON. Also strip the top-level `cost` object from the envelope before it is uploaded — cost information stays local. If any role-authored text inside the envelope (comments, summaries, journal excerpts if you ever include them) mentions tokens or USD, mask those numbers as `<redacted>` too.
-5. Post the summary as an issue comment. Do NOT embed the envelope in the comment — the JSON dump duplicates the summary prose without adding readable signal and blew up comment sizes, so it is retired (rule 20). `workspace/.state/<owner>_<repo>/<n>/envelope.json` still lives locally as the source of truth for state and as the input to the dashboard; it just doesn't get published. Same for `envelope.redacted.json` — stop writing it as part of publishing since nothing consumes it externally now.
-5a. The summary body — and any other human-visible artifact you write (PR body, release notes, issue comments, review bodies) — MUST NOT contain cost information. No token counts, no USD amounts, no per-role cost tables, no budget-ledger references. Cost stays inside the workspace: `costs`/`worker_reports` in the audit DB and the envelope's `cost` block are the only places USD/tokens are recorded, and the envelope's `cost` field is stripped by the redactor before the gist upload. External readers do not need to see what a Second Foundation run cost.
+5. Post the summary as an issue comment. Do NOT embed the envelope in the comment — the JSON dump duplicates the summary prose without adding readable signal and blew up comment sizes, so it is retired (rule 20). `workspace/.state/<owner>_<repo>/<n>/envelope.json` still lives locally as the source of truth for state; it just doesn't get published. Same for `envelope.redacted.json` — stop writing it as part of publishing since nothing consumes it externally now.
+5a. The summary body — and any other human-visible artifact you write (PR body, release notes, issue comments, review bodies) — MUST NOT contain cost information. No token counts, no USD amounts, no per-role cost tables, no budget-ledger references. Cost stays inside the workspace: `workspace/.state/budget.json` and the envelope's `cost` block are the only places USD/tokens are recorded, and the envelope's `cost` field is stripped by the redactor before the gist upload. External readers do not need to see what a Second Foundation run cost.
 6. Leave `assignee` as is (the PR references the closed loop; a maintainer decides whether to unassign on merge).
 7. Set `phase: done`. Save the envelope one final time.
 
@@ -576,18 +485,12 @@ Load `config/model-pricing.yaml` at startup and build a `role → usd_per_token`
 At the end of every subagent call:
 
 - Compute `usd = subagent_tokens * usd_per_token[role]`.
-- INSERT one `costs` row: `slot_id, ticket_ref, role, tokens=subagent_tokens, usd, ts`.
-- Append the same `{ts, ticket, role, tokens, usd}` entry to `workspace/.state/budget.json` (an append-only JSON array — read on next slot to compute the rolling-24h total).
+- Append a `{ts, ticket, role, tokens, usd}` entry with the measured `subagent_tokens` to `workspace/.state/budget.json` (an append-only JSON array — read on next slot to compute the rolling-24h total).
+- Run `python3 scripts/reprice.py`.
 
 The rule 21 hard-cap check runs against the trailing 24h sum in the ledger. If a model in a role's frontmatter has no matching entry in the pricing YAML, log a warning line and use `usd = 0.0` for that role in this slot; do not abort. The pricing table is a hand-editable safety rail, not billing.
 
-To reprice historical rows after editing the YAML, run:
-
-```
-python3 scripts/reprice.py
-```
-
-The script recomputes `costs.usd` and the ledger from the current YAML.
+`scripts/reprice.py` recomputes every ledger entry's `usd` from its `tokens` and the current YAML, so it also fixes old entries after a pricing edit.
 
 ## Dry-run mode
 

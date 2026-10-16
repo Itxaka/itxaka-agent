@@ -149,30 +149,19 @@ No branching from stale local state. No branching from feature branches. No comm
 
 ## 7a. Per-ticket worktree — never share a checkout across managers or tickets
 
-`workspace/<repo>/` is the shared **object store**, not a working tree. Every ticket in a slot's fanned-out set works in its own worktree at `workspace/<repo>-slot<slot_seq>-<pr_or_issue_number>/`, created right before its worker dispatches and torn down as soon as that worker returns. Two managers hitting overlapping tickets in successive slots — and up to 6 parallel workers inside one slot — can no longer stomp each other's `HEAD` or dirty state because they don't share a checkout in the first place. The manager also dedupes accepted candidates by repo per slot, so two per-ticket worktrees never target the same `<repo>` at the same time.
+`workspace/<repo>/` is the shared **object store**, not a working tree. Every ticket in a slot's fanned-out set works in its own worktree at `workspace/<repo>-slot<slot_id>-<pr_or_issue_number>/` (`<slot_id>` is the slot's UTC start time, `YYYYMMDDTHHMMSSZ`), created right before its worker dispatches and torn down as soon as that worker returns. Two managers hitting overlapping tickets in successive slots — and up to 6 parallel workers inside one slot — can no longer stomp each other's `HEAD` or dirty state because they don't share a checkout in the first place. The manager also dedupes accepted candidates by repo per slot, so two per-ticket worktrees never target the same `<repo>` at the same time.
 
 At slot start (or the first chained iteration inside a slot):
 
 1. `git -C workspace/<repo> fetch --prune upstream` and `git -C workspace/<repo> fetch --prune origin` — refresh the shared object store. No `reset --hard`, no `clean -fdx`, no `checkout` on the shared clone itself; another slot may already have branches checked out on it.
 2. For each accepted ticket, right before its worker dispatch:
-   `git -C workspace/<repo> worktree add workspace/<repo>-slot<slot_seq>-<n> upstream/<default_branch>` — the ticket's private checkout. All subsequent reads, writes, `git push`, and worker dispatches for that ticket use this path.
+   `git -C workspace/<repo> worktree add workspace/<repo>-slot<slot_id>-<n> upstream/<default_branch>` — the ticket's private checkout. All subsequent reads, writes, `git push`, and worker dispatches for that ticket use this path.
 3. Record the path in that ticket's `envelope.meta.worktree` so the audit trail can name what was actually built.
-4. As soon as each subagent returns (or the ticket errors), `git -C workspace/<repo> worktree remove --force workspace/<repo>-slot<slot_seq>-<n>` — leaving stale worktrees behind is fine for one or two slots but drifts into disk-space rot over a week.
+4. As soon as each subagent returns (or the ticket errors), `git -C workspace/<repo> worktree remove --force workspace/<repo>-slot<slot_id>-<n>` — leaving stale worktrees behind is fine for one or two slots but drifts into disk-space rot over a week.
 
 Chained iterations for the SAME ticket inside one slot (rule 11a) reuse the same worktree — check it exists before recreating. Cross-ticket transitions never happen inside a single per-ticket worktree; each ticket gets its own from the start.
 
 Rationale: successive slots used to reuse one clone. When a slot ran past the 15-min cron tick (slot 80: 95 min), the next tick fired a second manager that read `HEAD` off a branch the first manager had just checked out. That is what corrupted slot 87's round-0 tester dispatch and produced the `meta.concurrency_incident` on kairos-io/kairos#149. The worktree split kills that entire class — two managers on different tickets see zero contention, and two managers on the *same* ticket at least fight over identifiable per-ticket state (fold-on-read events, per-ticket `gh.lock`) instead of silently stomping one shared checkout.
-
-## 7b. Audit DB runs in WAL mode
-
-`workspace/.state/audit.sqlite` is opened in WAL journal mode. This is the corresponding change on the DB side of the concurrency split: many writers can commit rows overlappingly without one blocking the other on the file lock, and readers do not block writers. The pragma persists on the DB file, so setting it once is enough — but the manager still runs it at every slot start as an idempotent guard against a fresh clone silently regressing to `delete` mode:
-
-```
-sqlite3 workspace/.state/audit.sqlite \
-  "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;" >/dev/null
-```
-
-**HARD RULE:** every multi-statement write from the manager MUST wrap in a short `BEGIN IMMEDIATE`/`COMMIT` transaction. With fan-out (`roles.concurrency: 6`) the manager writes a batch of per-ticket `events` / `costs` / `worker_reports` rows as each of up to 6 subagents returns; without the wrapper the batch trips `SQLITE_BUSY` under overlap even with WAL on. Long-lived write transactions are equally bad — keep the block short (open, insert, commit). Single-statement writes (one INSERT, one UPDATE) do not need the wrapper.
 
 ## 8. Build work comes before QA and reviews
 
@@ -187,7 +176,7 @@ Build work means anything that ends in a commit on our own branch: an own-PR fix
 
 ## 8c. Build turns and review turns
 
-`config.pipeline.builds_per_review_slot` (default 2) sets the ratio. Count the finished slots that committed on build work since the last finished slot that committed on QA or on a review of someone else's PR. While that count is below the setting, the slot is a build turn; once it reaches it, the slot is a review turn, and the review commit resets the count. So with the default, two of every three committed slots go to build work, and QA and reviews still get every third slot. When a build turn finds no build work, it falls back to QA and review that slot; never idle to preserve the ratio. Rule 8e re-review requests sit outside the ratio: they always go first, whatever the turn.
+`config.pipeline.builds_per_review_slot` (default 2) sets the ratio. GitHub is the record: count the build actions of `agent.github_user` (PRs it opened, pushes to its own PR branches) since its last review action (a review on someone else's PR, or a `QA verification` comment). While that count is below the setting, the slot is a build turn; once it reaches it, the slot is a review turn, and the next review resets the count. If the count cannot be worked out, the slot is a build turn. So with the default, build work gets about two of every three committed slots, and QA and reviews still get every third slot. When a build turn finds no build work, it falls back to QA and review that slot; never idle to preserve the ratio. Rule 8e re-review requests sit outside the ratio: they always go first, whatever the turn.
 
 `0` turns the ratio off and makes every slot a build turn. QA and reviews then only run when there is no build work at all.
 
@@ -249,7 +238,7 @@ QA leads a review turn (rule 8c), and on a build turn it runs only when there is
 
 Rule 3b.ii still gates both: no third-party-inspectable proof, no label and no move. When the repo has no `QA:` labels (rule 3b), the result line in the comment stands in for the label and the move still happens.
 
-A QA slot counts as a review slot for the rule 8c ratio.
+A `QA verification` comment counts as a review action for the rule 8c ratio.
 
 ## 8a. Own open PRs come first on a build turn
 
@@ -306,9 +295,9 @@ Every review comment, issue comment, and audit summary the agent posts follows t
 
 Nothing about how the agent runs belongs in a ticket, PR, or audit-trail comment on GitHub. Only ticket-substance is public.
 
-Never mention: slot IDs or slot numbers, `entry_reason`, scheduler cadence, cron ticks, per-slot budget, `roles.concurrency`, `checked_at` bookkeeping, escalation queue mechanics, anti-starvation quotas, worker seats, cost figures in USD or tokens, subagent IDs, `phase` names beyond what a maintainer needs to understand next steps.
+Never mention: slot IDs or slot numbers, scheduler cadence, cron ticks, per-slot budget, `roles.concurrency`, `checked_at` bookkeeping, escalation queue mechanics, anti-starvation quotas, worker seats, cost figures in USD or tokens, subagent IDs, `phase` names beyond what a maintainer needs to understand next steps.
 
-If a fact belongs in the audit DB or the local envelope, it stays there. If the maintainer needs to know that a review round happened, the round number is enough — no "slot 193 committed to this ticket, seq X, cost Y" scaffolding.
+If a fact belongs in the local envelope, it stays there. If the maintainer needs to know that a review round happened, the round number is enough — no "slot 193 committed to this ticket, seq X, cost Y" scaffolding.
 
 ## 9a.iii. Concise comments; get to the point
 
@@ -324,14 +313,14 @@ Baselines by comment kind:
 
 The one comment kind where length is warranted is the `QEMU verification` comment under rule 3a — reviewers actually read that end to end because it is the test evidence. Even there, trim: what was booted, what was asserted, what the screenshot shows, blob SHAs. Skip the multi-paragraph tour of the boot sequence.
 
-If a comment has bulleted "Key files touched" or "Files changed" sections, those belong in the audit DB, not the comment. If a comment quotes back the reviewer's own findings after those findings are already on the diff, delete that section. If a paragraph describes what the agent was thinking about doing before it did the thing, delete that paragraph.
+If a comment has bulleted "Key files touched" or "Files changed" sections, those belong in the local envelope, not the comment. If a comment quotes back the reviewer's own findings after those findings are already on the diff, delete that section. If a paragraph describes what the agent was thinking about doing before it did the thing, delete that paragraph.
 
 ## 9b. Empirical claims about toolchain behaviour go through the builder
 
 Any review finding that rests on how a compiler, linker, language runtime or build tool behaves at build time — "the Go toolchain adds `X:…` to the version string", "clang emits an `__asan_init` call", "musl-gcc drops unused symbols under `--gc-sections`" — must be verified empirically before it is published. The reviewer is read-only and cannot compile anything; the way it flags a finding as still-unverified is `needs_build_verification: true` on that finding in its verdict. The manager, on receiving the verdict, dispatches the `kairos-triage-builder` subagent (see `.claude/agents/kairos-triage-builder.md`) with the exact claim, waits for its journal, and:
 
 - **Verdict `confirmed`:** the finding survives, and the builder's `one-line` is quoted into the review body next to the finding as evidence.
-- **Verdict `contradicted`:** the finding is dropped from the review before publication. The manager logs the retraction in the audit ledger; the PR author never sees the flawed finding.
+- **Verdict `contradicted`:** the finding is dropped from the review before publication. The manager records the retraction in the envelope `history`; the PR author never sees the flawed finding.
 - **Verdict `inconclusive`:** the finding is either dropped or held for the next round with a note; never published as a live blocker on inconclusive evidence.
 
 The reviewer is expected to raise a builder request whenever a finding *would* need a build to prove. The rule exists because a review comment that says "the toolchain appends X" without ever having asked the toolchain is exactly the failure mode rule 2 forbids — and by the time an author replies with "I built it and there is no X" the review already looks wrong. Fewer confident-sounding wrong findings is more valuable than more findings.
@@ -400,7 +389,7 @@ Guardrails so the chain does not turn into a runaway:
 - A chained pick that turns into real work (coder/tester/reviewer dispatch, branch push, PR open) ends the chain — that ticket becomes the slot's committed ticket and the slot closes on its outcome.
 - The chain resets at every slot boundary; there is no cross-slot carryover.
 
-Audit trail: every chained comment-only iteration writes its own `events` row (`comment_posted`, `chain_index=N`) against the same `slots.slot_id`, so the dashboard shows one slot with multiple comment artifacts rather than N phantom slots. `progress_note` on the closing UPDATE names each ticket touched, in order.
+The slot's closing summary line names each ticket touched, in order.
 
 ## 12. Mark ongoing tickets clearly
 
@@ -428,7 +417,7 @@ An `awaiting-author` envelope is not automatically work. Before treating one as 
 
 Compare `headRefOid` against the commit our last review was posted on (`reviews[].commit_id`), not only against the envelope, so a push the envelope missed still counts.
 
-If all of these hold, the envelope is dormant — silently update `meta.last_seen.checked_at` (so the dashboard shows "last checked at X"), do NOT open a slot row, do NOT count as work, and continue to the next queue item (own-PR check or rule 8 pipeline). Repeat visits from cron cost only the cheap `gh pr view` fetch, not a full slot.
+If all of these hold, the envelope is dormant — silently update `meta.last_seen.checked_at` (so a human can see we looked), do NOT count it as work, and continue to the next queue item (own-PR check or rule 8 pipeline). Repeat visits from cron cost only the cheap `gh pr view` fetch, not a full slot.
 
 When either signal changes, resume normally: new commits mean regenerate `pre_review` and dispatch the reviewer with `round++`; new comments mean read the thread and decide whether the round needs a fresh verdict.
 
@@ -566,9 +555,9 @@ One artifact leaves the workspace at this step:
 
 **Human-readable summary** — a comment on the issue, chronologically ordered by phase and round. Every entry names the role, the time, the artifact it produced (files, commits, tests, logs), and, for review rounds, the reviewer's verdict and comments. This is prose a maintainer can skim, standing on its own.
 
-The machine-readable `envelope.json` stays local — do NOT embed it in the comment, do NOT upload it as a gist, do NOT push it as a file to the repo. In practice the JSON dump duplicated the summary prose without adding readable signal and blew up the comment size, so it is retired. `workspace/.state/<repo>/<ticket>/envelope.json` remains the local source of truth for state and is still the input to the dashboard, but it is not published.
+The machine-readable `envelope.json` stays local — do NOT embed it in the comment, do NOT upload it as a gist, do NOT push it as a file to the repo. In practice the JSON dump duplicated the summary prose without adding readable signal and blew up the comment size, so it is retired. `workspace/.state/<repo>/<ticket>/envelope.json` remains the local source of truth for state, but it is not published.
 
-**No cost information leaves the workspace.** The summary comment, the PR body, release-note drafts, and any other human-visible artifact the manager produces MUST NOT contain token counts, USD amounts, per-role cost breakdowns, or budget-ledger references. Cost lives in the local audit DB and the envelope's `cost` block only — external readers on kairos-io do not need to see what a Second Foundation run cost.
+**No cost information leaves the workspace.** The summary comment, the PR body, release-note drafts, and any other human-visible artifact the manager produces MUST NOT contain token counts, USD amounts, per-role cost breakdowns, or budget-ledger references. Cost lives only in the local ledger `workspace/.state/budget.json` and the envelope's `cost` block — external readers on kairos-io do not need to see what a Second Foundation run cost.
 
 The PR description carries a link to the summary comment.
 
@@ -585,7 +574,7 @@ Two thresholds:
 - **Soft cap** (`budget.usd_soft_cap`) — the first time the rolling total crosses it in a window, the manager writes a warning to the log. Work continues. This exists so a runaway is visible before the hard cap trips.
 - **Hard cap** (`budget.usd_cap`) — the manager finishes any in-flight ticket, publishes its audit trail per rule 20, and then stops picking up new work. The scheduler continues to run and its idle state is logged; slot boundaries still occur. New work resumes when the rolling total falls back below the hard cap as the window advances.
 
-The manager records cost per role per phase into `envelope.cost.by_role` and updates a persistent rolling-window ledger at `workspace/.state/budget.json`. The ledger survives restarts.
+The manager records cost per role per phase into `envelope.cost.by_role` and appends one entry per subagent return (`ts`, `ticket`, `role`, `tokens`, `usd`) to the persistent rolling-window ledger at `workspace/.state/budget.json`, then runs `python3 scripts/reprice.py` so `usd` matches `config/model-pricing.yaml`. The ledger is the only cost record and survives restarts.
 
 ## 22. Roles run as subprocesses; model is per role
 
@@ -598,4 +587,4 @@ Every role runs in its own subprocess. Consequences:
 
 Model choice is per role, configured under `roles.runtimes.<role>.model`. The default assignments in `config/config.yaml` reflect the workload weight of each role. Operators may swap in different models — for example, deliberately picking a different model family for the reviewer to widen the perspective gap — without any code change.
 
-Concurrency is `roles.concurrency: 6`. A single manager invocation fans out up to 6 worker subagents in parallel per slot — one per accepted ticket — inside one `Agent`-tool block. The upper bound is per-repo worktree isolation: two candidates on the same `<owner>/<repo>` cannot run in the same slot because they would collide on the shared object store, so the manager dedupes accepted candidates by repo and defers duplicates to the next slot. Rule 11 slot alignment still holds — the slot closes when the last subagent returns, and every downstream aggregate (cost, `envelope_writes`, `wall_ms`) sums across the set.
+Concurrency is `roles.concurrency: 6`. A single manager invocation fans out up to 6 worker subagents in parallel per slot — one per accepted ticket — inside one `Agent`-tool block. The upper bound is per-repo worktree isolation: two candidates on the same `<owner>/<repo>` cannot run in the same slot because they would collide on the shared object store, so the manager dedupes accepted candidates by repo and defers duplicates to the next slot. Rule 11 slot alignment still holds — the slot closes when the last subagent returns, and its cost sums across the set.

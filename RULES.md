@@ -253,6 +253,15 @@ Skip conditions — the manager does nothing this slot when none of the above ho
 
 Only after this queue drains does the manager fall through to rule 8's PR-review-then-issue-triage pipeline. In-flight envelopes still resume first per the existing rule; own-PR fixups create a fresh envelope scoped to the fixup work.
 
+## 8g. Renovate PRs that pass are approved and merged
+
+Dependency-bot PRs (Renovate, `app/renovate`) are reviewed like any other PR, and when they pass the agent also merges them, on repos where `agent.github_user` has push (kairos, hadron). On repos where it can only approve (AuroraBoot, provider-kubernetes), it approves and lists them for the operator to merge.
+
+- "Passed" means every test, build and e2e check is green on a run whose base isn't stale. If the checks ran on an old base, ask Renovate to rebase (tick its rebase checkbox) and wait for the new run; never push to a Renovate branch.
+- The only red checks that don't block are ones that fail the same way on the default branch and aren't tests: the CodeQL default-vs-advanced setup error, the repo-wide `scan shipped bundle` failure (same advisories as on master, none new from the bump), and riscv64 jobs cancelled by the runner timeout.
+- The approval comes from a normal reviewer round at the current head, with the upstream release notes read. A wrong version jump (like Leap 15.6 to 42.3) is never merged.
+- Merge with `--squash`. Never `--admin` and never bypass a ruleset; if GitHub refuses, report it.
+
 ## 8b. Skip PRs already reviewed by the core team
 
 If any GitHub user in `agent.core_team_reviewers` (currently the human maintainers of `kairos-io` — see the config for the exact list) has posted a review on the PR with `state` in `APPROVED` / `CHANGES_REQUESTED` / `DISMISSED`, the agent does NOT open a fresh review. The maintainers own the PR; the Second Foundation duplicating their work is noise. Bump `meta.last_seen.checked_at` and fall through to the next queue item as a zero-write iteration (rule 11a) — no envelope, no slot commitment, no comment.

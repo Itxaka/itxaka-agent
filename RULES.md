@@ -68,9 +68,9 @@ The labels come off automatically the moment the head SHA changes (Renovate reba
 
 Label availability today: `QA: pass` / `QA: fail` exist on `kairos-io/kairos` and `kairos-io/hadron`. When the target repo does not have them yet, the agent MUST NOT try to create them (write permission on labels is not guaranteed); instead post the outcome as a "QA: pass" / "QA: fail" line inside the `QEMU verification` comment and note the missing label in the audit summary so the operator can add it.
 
-### 3b.i. Never label our own tickets
+### 3b.i. Our own tickets are QA'd like any other
 
-The `QA: pass` / `QA: fail` labels only go on tickets **originated by someone else** that the agent fully reviewed and QEMU-verified. Never apply either label to a PR or issue the triage agent itself opened — self-verification is not a trustworthy signal for outside reviewers, and stamping our own PR with `QA: pass` looks like a rubber stamp. For our own PRs, record the QEMU outcome only in the `QEMU verification` comment and let a human reviewer add the label if they want the cache entry.
+A PR or issue the triage agent opened gets no special treatment in QA. If it sits in the board's `QA` column, it is QA'd under rule 8d like any other card: same end-to-end test, same proof, same `QA: pass` / `QA: fail` label and the same board move. The proof requirement (rule 3b.ii) is what makes the label trustworthy, whoever opened the ticket.
 
 ### 3b.ii. QA label requires third-party-verifiable proof
 
@@ -219,7 +219,7 @@ QA leads a review turn (rule 8c), and on a build turn it runs only when there is
 **Which card.** Walk the cards whose Status is `QA` and take the first one that passes all of:
 
 - It is an Issue or a PullRequest on a repository (draft notes on the board are skipped).
-- It is not ours. Skip a card whose PR or issue `agent.github_user` opened, and skip an issue card whose fixing PR is ours — QA-ing our own work is the rubber stamp rule 3b.i forbids. Those wait for a human.
+- Our own cards are not skipped. A card whose PR or issue `agent.github_user` opened is QA'd exactly like any other (rule 3b.i).
 - It is not already QA'd at its current head: no `QA: pass` / `QA: fail` label applied at the current head SHA (rule 3b cache).
 - Nobody else is on it. Read the card's comments (and, for an issue, the comments on its linked PR) before picking: an unresolved QA claim from another human or agent within the last 7 days — "QA in progress", "working on QA", "doing QA", "testing this", "I'll QA", or another agent's disclosure block announcing QA — means skip. A claim older than 7 days with no follow-up is stale (same threshold as rule 3c).
 - The operator has not dropped it (`envelope.json` with `phase: dropped` for that ticket).
@@ -247,6 +247,7 @@ Any pull request the Second Foundation opened and has not yet seen merged or clo
 - **CI is red.** Any status-check leaf on the rollup is `FAILURE` or `TIMED_OUT`. Fix forward: dispatch the coder / tester to address the failure, commit, push, `git push origin <branch>`. Do not force-push.
 - **A reviewer requested changes.** `reviewDecision == 'CHANGES_REQUESTED'`, or the PR has new comments on the branch since the Second Foundation's last commit that name a file/line change. Dispatch the coder to address them, commit, push.
 - **A merge conflict landed.** `mergeable == 'CONFLICTING'`. Rebase `triage/<n>-<slug>` onto `upstream/<default>`, resolve, `git push --force-with-lease origin <branch>`. Force-with-lease is allowed on our own fork branches; rule 1's force-push ban is about *other contributors' branches* on upstream.
+- **Our own QA failed.** The PR, or the issue it fixes, carries `QA: fail` from our `QA verification` comment at the current head SHA (rule 8d). Dispatch the coder with that comment attached, commit, push. The next QA of the new head decides whether it passes.
 - **The PR is closed unmerged.** Someone else closed it. Drop the ticket, log it in the audit trail, no follow-up push.
 
 Skip conditions — the manager does nothing this slot when none of the above hold and the PR is simply waiting: `MERGEABLE` + no failed checks + `reviewDecision` in `null` / `APPROVED` / `REVIEW_REQUIRED` (nobody's told us anything). Sitting on a maintainer waiting on us is not a reason to nudge; the Second Foundation does not post "any updates?" comments.

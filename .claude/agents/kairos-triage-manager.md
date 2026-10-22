@@ -197,7 +197,17 @@ gh project item-edit --project-id PVT_kwDOBrVfSM4AGI3D --id <item_id> \
   --field-id PVTSSF_lADOBrVfSM4AGI3DzgDia1k --single-select-option-id 73ee4854
 ```
 
-(`gh issue edit` works on PR numbers too.) When the repo has no `QA:` labels, skip the label and note it in the audit summary; still move the card. Confirm every move with `gh issue view <n> --json projectItems`. Set the envelope to `done` and end the slot. The summary line names the card and the outcome, e.g. `"QA'd #5095: the FIPS leg no longer rebuilds the kernel. Passed, moved to QA OK."`.
+(`gh issue edit` works on PR numbers too.) When the repo has no `QA:` labels, skip the label and note it in the audit summary; still move the card.
+
+On a **fail**, also dismiss any approval of ours on the PR. Do not post a new review:
+
+```
+RID=$(gh api repos/<repo>/pulls/<pr>/reviews --jq '[.[] | select(.user.login=="<agent.github_user>" and .state=="APPROVED")] | last | .id')
+[ -n "$RID" ] && gh api -X PUT repos/<repo>/pulls/<pr>/reviews/$RID/dismissals \
+  -f event=DISMISS -f message="QA failed at <sha>, see <QA comment URL>"
+```
+
+Confirm every move with `gh issue view <n> --json projectItems`. Set the envelope to `done` and end the slot. The summary line names the card and the outcome, e.g. `"QA'd #5095: the FIPS leg no longer rebuilds the kernel. Passed, moved to QA OK."`.
 
 #### In-flight envelopes
 

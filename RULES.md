@@ -234,7 +234,7 @@ QA leads a review turn (rule 8c), and on a build turn it runs only when there is
 **Report with proof.** The issue is where the proof lives. Post the full `QA verification` comment on the issue: what was tested, the PR and the SHA, the result as a `QA: pass` / `QA: fail` line, and the proof — QEMU screenshots per rule 3a, hosted on `itxaka-agent/triage-assets`. On the PR, post a short comment linking to that issue comment. When the PR fixes no issue, the full comment goes on the PR. Then label both the issue and the PR, and move both of them on the board, whatever column they are in now (add one to the board first if it is not on it):
 
 - **Pass** → label `QA: pass`, move to `QA OK`. A `QA: pass` label always comes with the `QA OK` column. If our current review on that PR is changes-requested, recheck it: run a fresh review round at the QA'd head. Approve if it comes back clean; otherwise leave changes-requested in place and say what is still open, so a stale review never sits next to a QA pass.
-- **Fail** → label `QA: fail`, move to `Under review`. If we had approved that PR, replace the approval with a changes-requested review pointing at the QA comment, so our review and our QA result agree.
+- **Fail** → label `QA: fail`, move to `Under review`. If we had approved that PR, dismiss our approval with a message linking the QA comment, so no approval of ours sits next to a QA fail. Do not post a new review.
 
 Rule 3b.ii still gates both: no third-party-inspectable proof, no label and no move. When the repo has no `QA:` labels (rule 3b), the result line in the comment stands in for the label and the move still happens.
 

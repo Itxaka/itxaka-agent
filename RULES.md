@@ -393,6 +393,8 @@ In either case, sitting out the rest of the slot is pure wall-clock waste. The m
 
 Only close the slot when the pick loop returns empty — every candidate the manager can reach is filtered out, dormant, or already Second-Foundation-owned and non-actionable. That is the only correct "nothing to do this slot" exit.
 
+The five-iteration chain cap counts only iterations that act on a ticket (comment-only, dormant envelope, own PR polled). Candidates rejected while walking a queue (rule 5, already-taken, `rules.yaml`, a QA card that fails its checks) do not count. A slot never ends as "nothing to do", or on the cap, before the walk has reached QA (rule 8d) and `review_prs`. QA being slow is not a reason to skip it.
+
 Guardrails so the chain does not turn into a runaway:
 
 - **Cap chained picks at 5 per slot.** After the fifth iteration (committing or not), close the slot even if the pipeline still has candidates; the cron's next tick will drain the rest.

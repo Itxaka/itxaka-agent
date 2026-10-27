@@ -234,7 +234,7 @@ QA leads a review turn (rule 8c), and on a build turn it runs only when there is
 **Report with proof.** The issue is where the proof lives. Post the full `QA verification` comment on the issue: what was tested, the PR and the SHA, the result as a `QA: pass` / `QA: fail` line, and the proof — QEMU screenshots per rule 3a, hosted on `itxaka-agent/triage-assets`. On the PR, post a short comment linking to that issue comment. When the PR fixes no issue, the full comment goes on the PR. Then label both the issue and the PR, and move both of them on the board, whatever column they are in now (add one to the board first if it is not on it):
 
 - **Pass** → label `QA: pass`, move to `QA OK`. A `QA: pass` label always comes with the `QA OK` column. If our current review on that PR is changes-requested, recheck it: run a fresh review round at the QA'd head. Approve if it comes back clean; otherwise leave changes-requested in place and say what is still open, so a stale review never sits next to a QA pass.
-- **Fail** → label `QA: fail`, move to `Under review`. If we had approved that PR, dismiss our approval with a message linking the QA comment, so no approval of ours sits next to a QA fail. Do not post a new review.
+- **Fail** → label `QA: fail`, move to `Under review`. If we had approved that PR, dismiss our approval with a message linking the QA comment, so no approval of ours sits next to a QA fail, and turn off the auto-merge our approval set (rule 12c). Do not post a new review.
 
 Rule 3b.ii still gates both: no third-party-inspectable proof, no label and no move. When the repo has no `QA:` labels (rule 3b), the result line in the comment stands in for the label and the move still happens.
 
@@ -416,6 +416,12 @@ The agent does not create, apply, or remove repository labels, except the `QA: p
 - **QA result (rule 8d).** After QA-ing a card, the agent moves the issue and the PR to `QA OK` on a pass, or to `Under review` on a fail, from whatever column they were in.
 
 The exact `gh project item-add` + `gh project item-edit` calls, project id, field id, and QA option id are in the manager's "Finalize" step 2a; the QA result moves are in the manager's "QA first" section; the third-party approve path in the manager's "Third-party PRs" section reuses them. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
+
+## 12c. An approval turns on auto-merge
+
+Whenever the agent approves a third-party PR (`gh pr review --approve`), it also turns on auto-merge with a squash (`gh pr merge <n> --repo <owner>/<repo> --auto --squash`), so the PR merges by itself once the required checks pass. This works only where the repo allows auto-merge and `agent.github_user` has Write access or higher. Where it does not, as on kairos-docs, which gives the agent Triage only, skip it and name the PR in the slot summary. A failed auto-merge call never retracts the review.
+
+A QA fail (rule 8d) also turns auto-merge off (`gh pr merge <n> --repo <owner>/<repo> --disable-auto`), next to dismissing our approval.
 
 ## 12b. Skip a resumed review when nothing changed
 

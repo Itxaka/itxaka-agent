@@ -207,13 +207,6 @@ RID=$(gh api repos/<repo>/pulls/<pr>/reviews --jq '[.[] | select(.user.login=="<
   -f event=DISMISS -f message="QA failed at <sha>, see <QA comment URL>"
 ```
 
-Then turn off any auto-merge our approval set (rule 12c), so the PR cannot merge on green checks after a QA fail:
-
-```
-[ "$(gh pr view <pr> --repo <repo> --json autoMergeRequest --jq '.autoMergeRequest != null')" = true ] && \
-  gh pr merge <pr> --repo <repo> --disable-auto
-```
-
 Confirm every move with `gh issue view <n> --json projectItems`. Set the envelope to `done` and end the slot. The summary line names the card and the outcome, e.g. `"QA'd #5095: the FIPS leg no longer rebuilds the kernel. Passed, moved to QA OK."`.
 
 #### In-flight envelopes
@@ -430,12 +423,6 @@ A PR whose author is not `agent.github_user` is third-party (Renovate, human con
   gh pr view <n> --repo <owner>/<repo> --json projectItems --jq '.projectItems[] | select(.title | test("Issue tracking board")) | .status.name'
   ```
   If the status (case-insensitive, trailing emoji/whitespace stripped) is `QA`, `QA OK`, or `Done`, leave it — do not move a PR backwards. Otherwise run the same two calls as Finalize step 2a (`gh project item-add 1 --owner kairos-io --url <pr_url> ...` then `gh project item-edit ... --single-select-option-id 3f5385f2`); `item-add` returns the existing item id when the PR is already on the board, so it is safe to run unconditionally. If either fails, do NOT retract the review — record the failure in the audit summary and continue. Gate both calls in dry-run like every other `gh` write. Never on `changes-requested`, never on a rule 6a comment-only reply.
-
-  **Auto-merge on approve (rule 12c).** After the board move, check that the repo allows auto-merge and that the agent can write to it:
-  ```
-  gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){autoMergeAllowed viewerPermission}}' --jq '.data.repository'
-  ```
-  If `autoMergeAllowed` is true and `viewerPermission` is `WRITE`, `MAINTAIN` or `ADMIN`, run `gh pr merge <n> --repo <owner>/<repo> --auto --squash`. Otherwise skip it and name the PR in the slot summary as "approved, no auto-merge (<reason>)". If the call fails, do NOT retract the review; record the error in the audit summary. Gate it in dry-run.
 - On `changes-requested`: post the review AND every per-finding comment as inline diff comments in a single API call — this is rule 12a. Assemble the payload as:
   ```
   gh api /repos/<owner>/<repo>/pulls/<n>/reviews -X POST \

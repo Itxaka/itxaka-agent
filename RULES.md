@@ -225,7 +225,7 @@ QA leads a review turn (rule 8c), and on a build turn it runs only when there is
 
 - It is an Issue or a PullRequest on a repository (draft notes on the board are skipped).
 - Our own cards are not skipped. A card whose PR or issue `agent.github_user` opened is QA'd exactly like any other (rule 3b.i).
-- It is not already QA'd at its current head: no `QA: pass` / `QA: fail` label applied at the current head SHA (rule 3b cache).
+- It is not already QA'd at its current head: no `QA: pass` / `QA: fail` label applied at the current head SHA (rule 3b cache), and no earlier QA of ours that ended in skip at the same head (a skip leaves no label, so the envelope records it).
 - Nobody else is on it. Read the card's comments (and, for an issue, the comments on its linked PR) before picking: an unresolved QA claim from another human or agent within the last 7 days — "QA in progress", "working on QA", "doing QA", "testing this", "I'll QA", or another agent's disclosure block announcing QA — means skip. A claim older than 7 days with no follow-up is stale (same threshold as rule 3c).
 - The operator has not dropped it (`envelope.json` with `phase: dropped` for that ticket).
 - There is a PR to test. The issue is only the reference for what to verify; the PR is what gets QA'd. An issue card with no linked PR has nothing to QA and is skipped.

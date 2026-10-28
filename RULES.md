@@ -626,7 +626,7 @@ A separate track looks for problems nobody has filed yet: bugs, shortcomings and
 - **Proof, not hunches.** A finding is filed only with a reproduction (command output, a failing test, a QEMU run), or with exact code or docs references that contradict each other on their own. A second hunter, with a fresh context and nothing but the finding, must re-derive and confirm it before it is filed. Repo code runs only in containers or QEMU, never on the host.
 - **No cap.** Every confirmed finding becomes an issue. Ten real problems mean ten issues.
 - **No duplicates.** Search open and closed issues first. An open match gets the new evidence as a comment; a closed one that came back gets a new issue that links it and says it regressed.
-- **Where.** Hadron findings go to `kairos-io/hadron`; everything else goes to `kairos-io/kairos`, the central tracker, naming the repo in the body.
+- **Where.** Every issue goes to `kairos-io/kairos`, the central tracker, naming the repo in the body. Hadron findings also get `area/hadron`.
 - **Labels.** As many existing labels as fit: one kind (`bug` or `enhancement`) plus every matching area and topic label. Never create a label.
 - **Coverage.** A cursor in `workspace/.state/hunt-cursor.json` rotates through repos and areas, so each batch covers new ground and an area is not re-hunted at the same commit or within 7 days.
 

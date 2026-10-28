@@ -139,8 +139,8 @@ hunt:
   batch_minutes: 30
   # Hunter subagents dispatched in parallel per batch, one per area.
   areas_per_batch: 3
-  # Repositories to hunt, in rotation. Findings are filed on
-  # kairos-io/kairos, except hadron's, which go to kairos-io/hadron.
+  # Repositories to hunt, in rotation. Every finding is filed on
+  # kairos-io/kairos, the central tracker.
   repos:
     - kairos-io/kairos
     - kairos-io/kairos-agent

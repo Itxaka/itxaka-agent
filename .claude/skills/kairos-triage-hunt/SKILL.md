@@ -1,6 +1,6 @@
 ---
 name: kairos-triage-hunt
-description: Run one 30-minute hunt batch of the Kairos triage agent. Spawns one kairos-triage-manager in `Mode: hunt`, which sends hunter subagents through a rotating set of Kairos repos and areas, proves and double-checks every bug, shortcoming or missing feature they find, and files each one as a labelled issue. Runs on its own cadence, independent of the `/kairos-triage-run` seats.
+description: Run one 30-minute hunt batch of the Kairos triage agent. Spawns one kairos-triage-manager in `Mode: hunt`, which sends hunter subagents through a rotating set of Kairos repos and areas, proves and double-checks every bug, shortcoming or missing feature they find, and files each one as a labelled issue on kairos-io/kairos. Runs on its own cadence, independent of the `/kairos-triage-run` seats.
 ---
 
 # kairos-triage-hunt

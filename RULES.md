@@ -180,6 +180,8 @@ Build work means anything that ends in a commit on our own branch: an own-PR fix
 
 `0` turns the ratio off and makes every slot a build turn. QA and reviews then only run when there is no build work at all.
 
+The scheduler normally runs two managers per slot side by side, one in `Mode: build` and one in `Mode: review` (see "Slot mode" in the manager file). Then the ratio does not apply: the build manager only builds and ends the slot when nothing qualifies, and the review manager only does rule 8e, QA and reviews. Each resumes only its own envelopes and skips a ticket the other has in flight.
+
 **Label priority within `triage_issues`.** The stage is not scoped to `bug`. It walks the whole open-issue queue on every repository with `watch.issues: true` in `config/config.yaml` (repo order first, as listed there) in this order and takes the first ticket that passes `config/rules.yaml`:
 
 1. Release-meta priority set (rule 16) — anything the next-release meta references, regardless of label.

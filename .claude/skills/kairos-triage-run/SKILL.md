@@ -12,14 +12,17 @@ A slot is 15 minutes by default (`schedule.slot_minutes` in `config/config.yaml`
 ## What this skill does
 
 1. Confirm the current working directory is a `kairos-triage-agent` project (contains `RULES.md`, `config/config.yaml`, `.claude/agents/kairos-triage-manager.md`). If not, refuse and tell the user to `cd` into the project.
-2. Spawn the `kairos-triage-manager` subagent with this prompt:
+2. Spawn two `kairos-triage-manager` subagents in a single `Agent` block, so they run side by side, one per slot mode:
 
    ```
    Run one slot of the Kairos triage agent. Follow your agent-file
    instructions exactly. Working directory: <absolute path>.
+   Mode: build
    ```
 
-3. Report the manager's final summary line back to the user. Do not paraphrase it — the summary is the record of what happened this slot.
+   and the same prompt with `Mode: review`. The build manager only opens and fixes PRs; the review manager only reviews and QAs (see "Slot mode" in the manager file).
+
+3. Report both managers' final summary lines back to the user. Do not paraphrase them — the summaries are the record of what happened this slot.
 
 ## What this skill does NOT do
 

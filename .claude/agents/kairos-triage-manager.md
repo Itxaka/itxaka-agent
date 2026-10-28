@@ -42,7 +42,7 @@ A slot ends either finished or in error. Error covers the case where any dispatc
 
 Reuse the same `slot_id` for every chained iteration.
 
-Cap at FIVE chained iterations per slot (committing or not); on the sixth, end the slot and let the next cron tick continue. Only iterations that act on a ticket count toward the cap: a comment-only iteration, a dormant envelope, or an own PR polled with nothing to do. A candidate rejected while walking a queue (rule 5, 6a, 6b, `rules.yaml`, already-taken, a QA card that fails its checks) is part of the walk, not an iteration, and does not count. Never end a slot as "nothing to do" or on the cap before the walk has reached QA (rule 8d) and `review_prs`. A chained pick that turns into real work ends the chain — the slot commits to that ticket and ends on its normal outcome. Only end the slot as "nothing to do this slot" when the pick loop returns EMPTY — every reachable candidate is filtered, dormant, or Second-Foundation-owned and non-actionable. Non-actionable in-flight envelopes are NOT a reason to stop; they are a reason to fall through.
+Cap at FIVE chained iterations per slot (committing or not); on the sixth, end the slot and let the next cron tick continue. Only iterations that act on a ticket count toward the cap: a comment-only iteration, a dormant envelope, or an own PR polled with nothing to do. A candidate rejected while walking a queue (rule 5, 6a, 6b, `rules.yaml`, already-taken, a QA card that fails its checks) is part of the walk, not an iteration, and does not count. Without a slot mode, never end a slot as "nothing to do" or on the cap before the walk has reached QA (rule 8d) and `review_prs`; a `Mode: build` slot stops after its own sources instead. A chained pick that turns into real work ends the chain — the slot commits to that ticket and ends on its normal outcome. Only end the slot as "nothing to do this slot" when the pick loop returns EMPTY — every reachable candidate is filtered, dormant, or Second-Foundation-owned and non-actionable. Non-actionable in-flight envelopes are NOT a reason to stop; they are a reason to fall through.
 
 The slot's closing summary line names every ticket touched in order (e.g. `"#4282 dormant, #4442 mergeable-waiting; picked up review of #4451, posted the initial disclosure."`).
 
@@ -85,6 +85,18 @@ If a slot blew up before doing meaningful work (network failure fetching state, 
 5. If the trailing total is at or above `budget.usd_soft_cap` and no soft-cap warning was written for this window yet, log a warning line and continue.
 
 ### Pick what to work on
+
+#### Slot mode
+
+The prompt may name a mode: `Mode: build` or `Mode: review`. The skill runs one manager of each at the same time every slot. With no mode, the slot runs as described below, with the turn ratio.
+
+- **`Mode: build`** — open PRs. Skip rule 8e, QA and `review_prs`, and skip the build/review turn calculation. Order: own open PRs that need action (8a) → in-flight build envelopes → Renovate roll-up (8g) → `triage_issues` (8c ladder) → self-sourced work (8f). If nothing qualifies, end the slot; do not fall through to QA or reviews. The summary lists what was walked and why each source was empty.
+- **`Mode: review`** — review and QA only. Order: rule 8e → in-flight review and QA envelopes → QA (8d) → `review_prs`. Never pick an own PR, an issue, 8f work or a Renovate roll-up, and never resume a build envelope.
+
+Two managers run side by side, so keep off each other's work:
+- Write the mode into `envelope.meta.mode` at intake, and only resume envelopes of your own mode. Envelopes with no `meta.mode` belong to build if `kind` is `issue` or the PR is ours, to review otherwise.
+- Skip any ticket whose envelope is in flight (phase not `done`/`dropped`/`escalated`) and was written in the last 30 minutes by the other mode.
+- Append to the budget ledger under a lock: `flock workspace/.state/budget.lock python3 -c '...append...'`, then `scripts/reprice.py` under the same lock.
 
 #### Re-review requests first (rule 8e)
 
@@ -507,8 +519,8 @@ Load `config/model-pricing.yaml` at startup and build a `role → usd_per_token`
 At the end of every subagent call:
 
 - Compute `usd = subagent_tokens * usd_per_token[role]`.
-- Append a `{ts, ticket, role, tokens, usd}` entry with the measured `subagent_tokens` to `workspace/.state/budget.json` (an append-only JSON array — read on next slot to compute the rolling-24h total).
-- Run `python3 scripts/reprice.py`.
+- Append a `{ts, ticket, role, tokens, usd}` entry with the measured `subagent_tokens` to `workspace/.state/budget.json` (an append-only JSON array — read on next slot to compute the rolling-24h total). Two managers may run at once, so do the read-modify-write under `flock workspace/.state/budget.lock`.
+- Run `python3 scripts/reprice.py` under the same lock.
 
 The rule 21 hard-cap check runs against the trailing 24h sum in the ledger. If a model in a role's frontmatter has no matching entry in the pricing YAML, log a warning line and use `usd = 0.0` for that role in this slot; do not abort. The pricing table is a hand-editable safety rail, not billing.
 

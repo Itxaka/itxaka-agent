@@ -212,6 +212,15 @@ repositories:
       # PR reviews only; issue triage stays scoped to kairos-io/kairos.
       issues: false
       pull_requests: true
+  - owner: kairos-io
+    name: kairos-operator
+    default_branch: main
+    watch:
+      # Issues are disabled on this repo; operator bugs are filed on
+      # kairos-io/kairos and fixed here (e.g. kairos#3995). The agent has
+      # read access only, so its PRs come from the itxaka-agent fork.
+      issues: false
+      pull_requests: true
 
 # GitHub authentication.
 #

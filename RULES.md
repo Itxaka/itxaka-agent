@@ -189,7 +189,9 @@ Build work means anything that ends in a commit on our own branch: an own-PR fix
 
 `0` turns the ratio off and makes every slot a build turn. QA and reviews then only run when there is no build work at all.
 
-The scheduler normally runs two managers per slot side by side, one in `Mode: build` and one in `Mode: review` (see "Slot mode" in the manager file). Then the ratio does not apply: the build manager only builds and ends the slot when nothing qualifies, and the review manager only does rule 8e, QA and reviews. Each resumes only its own envelopes and skips a ticket the other has in flight.
+The scheduler normally runs two managers per slot side by side, one per seat, each in a `Mode: build`, `Mode: review` or `Mode: qa` (see "Slot mode" in the manager file). Then the ratio does not apply: each manager does only its mode's work and ends the slot when nothing qualifies. Each resumes only its own mode's envelopes and skips a ticket another manager has in flight.
+
+**No fixed roles.** A seat does not keep one mode for long. When its manager had nothing to do for 4 slots in a row, or after 8 slots in the same mode, the seat moves to the next mode in the cycle review → QA → build → review. Both seats may land on the same mode. While no seat is in review mode, one seat also handles rule 8e and checks PRs waiting on their authors. The skill keeps the seat state in `workspace/.state/seats.json` (see "Seats and rotation" in the skill).
 
 **Label priority within `triage_issues`.** The stage is not scoped to `bug`. It walks the whole open-issue queue on every repository with `watch.issues: true` in `config/config.yaml` (repo order first, as listed there) in this order and takes the first ticket that passes `config/rules.yaml`:
 
@@ -329,9 +331,9 @@ Every review comment, issue comment, and audit summary the agent posts follows t
 
 Nothing about how the agent runs belongs in a ticket, PR, or audit-trail comment on GitHub. Only ticket-substance is public.
 
-Never mention: slot IDs or slot numbers, scheduler cadence, cron ticks, per-slot budget, `roles.concurrency`, `checked_at` bookkeeping, escalation queue mechanics, anti-starvation quotas, worker seats, cost figures in USD or tokens, subagent IDs, `phase` names beyond what a maintainer needs to understand next steps.
+Never mention: slot IDs or slot numbers, scheduler cadence, cron ticks, `roles.concurrency`, `checked_at` bookkeeping, escalation queue mechanics, anti-starvation quotas, worker seats, subagent IDs, `phase` names beyond what a maintainer needs to understand next steps.
 
-If a fact belongs in the local envelope, it stays there. If the maintainer needs to know that a review round happened, the round number is enough — no "slot 193 committed to this ticket, seq X, cost Y" scaffolding.
+If a fact belongs in the local envelope, it stays there. If the maintainer needs to know that a review round happened, the round number is enough — no "slot 193 committed to this ticket, seq X" scaffolding.
 
 ## 9a.iii. Concise comments; get to the point
 
@@ -593,34 +595,25 @@ One artifact leaves the workspace at this step:
 
 The machine-readable `envelope.json` stays local — do NOT embed it in the comment, do NOT upload it as a gist, do NOT push it as a file to the repo. In practice the JSON dump duplicated the summary prose without adding readable signal and blew up the comment size, so it is retired. `workspace/.state/<repo>/<ticket>/envelope.json` remains the local source of truth for state, but it is not published.
 
-**No cost information leaves the workspace.** The summary comment, the PR body, release-note drafts, and any other human-visible artifact the manager produces MUST NOT contain token counts, USD amounts, per-role cost breakdowns, or budget-ledger references. Cost lives only in the local ledger `workspace/.state/budget.json` and the envelope's `cost` block — external readers on kairos-io do not need to see what a Second Foundation run cost.
-
 The PR description carries a link to the summary comment.
 
 **Redaction is mandatory.** Before either artifact leaves the workspace, the manager runs both through the redactor: `$HOME` paths are collapsed to `~`, MAC addresses are replaced with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs are replaced with `x.x.x.x`, and any string matching the token-shape patterns in `config/config.yaml` is replaced with `<redacted>`. Nothing published, ever, without the filter.
 
 On escalation the same publication happens with `phase: escalated` — the outgoing comment shows the disagreement in full and links to the fork branch, so the human picking up the ticket has every artifact the roles produced.
 
-## 21. Global cost budget with a rolling window
+## 21. (Retired)
 
-Ticket cost varies wildly — a doc typo is cents, a boot-flow bug with several QEMU reproduction cycles is dollars. A per-ticket cap would either strangle the expensive-but-legitimate work or leave the cheap work uncapped. The budget is therefore **global**, aggregated across every role and every ticket over a rolling window (default: 24 hours).
-
-Two thresholds:
-
-- **Soft cap** (`budget.usd_soft_cap`) — the first time the rolling total crosses it in a window, the manager writes a warning to the log. Work continues. This exists so a runaway is visible before the hard cap trips.
-- **Hard cap** (`budget.usd_cap`) — the manager finishes any in-flight ticket, publishes its audit trail per rule 20, and then stops picking up new work. The scheduler continues to run and its idle state is logged; slot boundaries still occur. New work resumes when the rolling total falls back below the hard cap as the window advances.
-
-The manager records cost per role per phase into `envelope.cost.by_role` and appends one entry per subagent return (`ts`, `ticket`, `role`, `tokens`, `usd`) to the persistent rolling-window ledger at `workspace/.state/budget.json`, then runs `python3 scripts/reprice.py` so `usd` matches `config/model-pricing.yaml`. The ledger is the only cost record and survives restarts.
+This rule number is retired; the rules after it keep their numbers.
 
 ## 22. Roles run as subprocesses; model is per role
 
 Every role runs in its own subprocess. Consequences:
 
 - A crashed role does not take down the manager or any sibling role.
-- Each role gets its own OS environment, own working directory, own timeout, own token accounting, and — critically — its own fresh LLM context. There is no shared conversation state across role invocations.
+- Each role gets its own OS environment, own working directory, own timeout, and — critically — its own fresh LLM context. There is no shared conversation state across role invocations.
 - This subprocess boundary is what makes rule 19's envelope the only channel between roles. Nothing else survives across the boundary.
 - It also structurally satisfies reviewer independence: the reviewer never reads the coder's live context, only the artifacts the coder committed to the envelope.
 
 Model choice is per role, configured under `roles.runtimes.<role>.model`. The default assignments in `config/config.yaml` reflect the workload weight of each role. Operators may swap in different models — for example, deliberately picking a different model family for the reviewer to widen the perspective gap — without any code change.
 
-Concurrency is `roles.concurrency: 6`. A single manager invocation fans out up to 6 worker subagents in parallel per slot — one per accepted ticket — inside one `Agent`-tool block. The upper bound is per-repo worktree isolation: two candidates on the same `<owner>/<repo>` cannot run in the same slot because they would collide on the shared object store, so the manager dedupes accepted candidates by repo and defers duplicates to the next slot. Rule 11 slot alignment still holds — the slot closes when the last subagent returns, and its cost sums across the set.
+Concurrency is `roles.concurrency: 6`. A single manager invocation fans out up to 6 worker subagents in parallel per slot — one per accepted ticket — inside one `Agent`-tool block. The upper bound is per-repo worktree isolation: two candidates on the same `<owner>/<repo>` cannot run in the same slot because they would collide on the shared object store, so the manager dedupes accepted candidates by repo and defers duplicates to the next slot. Rule 11 slot alignment still holds — the slot closes when the last subagent returns.

@@ -13,7 +13,6 @@ The triage agent runs entirely inside Claude Code. It is not a standalone binary
 | Rule 17 manager-only writes                 | Manager alone owns `Bash` (for `gh`, `git push`); workers get read/edit tools only |
 | Rule 19 envelope                            | JSON file on disk under `workspace/.state/<repo>/<ticket>/envelope.json`          |
 | Rule 20 audit publish                       | Manager runs `gh issue comment` / `gh pr create` after the reviewer approves      |
-| Rule 21 cost budget                         | Manager totals `subagent_tokens` from each Agent result into `workspace/.state/budget.json` |
 | Rule 11 15-minute slot loop, 08:00–17:00    | `/schedule` cloud routine — one manager invocation per slot                        |
 | Rule 11a non-committing chain, cap 5        | Manager re-enters the pick loop in-process; same `slot_id`                         |
 | GitHub reads                                | `gh api` / `gh issue list` via `Bash`                                             |
@@ -28,7 +27,7 @@ The triage agent runs entirely inside Claude Code. It is not a standalone binary
 
 Each manager invocation is intended to progress exactly the amount of work that fits in one 15-minute slot. Concretely:
 
-1. Load `config/config.yaml` and check the working window + budget ledger.
+1. Load `config/config.yaml` and check the working window.
 2. If a ticket already has an in-flight envelope, advance it by as many phases as fit in the timeout (coding → testing → docs → reviewing → manager-final).
 3. If no in-flight envelope exists, pick one new ticket from the priority queue (rule 16) or the plain queue and create its envelope in `intake`.
 4. On `manager-final` or `escalated`, publish the audit trail (rule 20) and close the envelope.

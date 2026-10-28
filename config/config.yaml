@@ -132,26 +132,6 @@ roles:
   # finding rather than block.
   builder_wallclock_seconds: 900
 
-# Global cost budget with a rolling window. See RULES.md rule 21. Per-ticket
-# caps are the wrong tool here — some tickets legitimately cost more than
-# others — so the budget aggregates across every role and every ticket.
-budget:
-  # Window over which spend is aggregated. Anything older than this rolls off.
-  window: 24h
-
-  # Soft threshold — a warning is logged the first time it is crossed in a
-  # window. Work continues. Useful for spotting a runaway before the hard
-  # cap trips.
-  usd_soft_cap: 10000.00
-
-  # Hard threshold — the manager finishes in-flight work, publishes its
-  # audit trail, then stops picking up new tickets until the rolling total
-  # falls back below this line as the window advances.
-  usd_cap: 10000.00
-
-  # Persistent rolling-window ledger. Survives restarts.
-  ledger_path: workspace/.state/budget.json
-
 # Audit trail publication. See RULES.md rule 20.
 audit:
   # Where the summary lives. Currently: a comment on the issue, with the PR
@@ -164,11 +144,8 @@ audit:
   envelope_target: inline
 
   # Redaction applied to both the summary and the raw envelope before
-  # anything leaves the workspace. Rule 20. `strip_cost` removes the
-  # envelope.cost block entirely before the gist upload; the local audit
-  # DB keeps the numbers.
+  # anything leaves the workspace. Rule 20.
   redact:
-    strip_cost:    true
     home_paths:    true       # $HOME -> ~
     mac_addresses: true       # xx:xx:xx:xx:xx:xx
     public_ips:    true       # non-loopback / non-RFC1918 / non-documentation

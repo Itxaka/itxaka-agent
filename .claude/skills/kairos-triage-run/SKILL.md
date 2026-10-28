@@ -1,6 +1,6 @@
 ---
 name: kairos-triage-run
-description: Run one slot of the Kairos triage agent. Spawns the kairos-triage-manager subagent to progress one ticket (or chain across several non-committing iterations per rule 11a, or idle if the queue is empty). Invoke manually with `/kairos-triage-run`, or wire to a `/schedule` routine that ticks every 15 minutes on active weekdays inside the working window.
+description: Run one slot of the Kairos triage agent. Spawns two kairos-triage-manager subagents, one per seat with rotating modes, to progress tickets (or chain across several non-committing iterations per rule 11a, or idle if the queue is empty). Invoke manually with `/kairos-triage-run`, or wire to a `/schedule` routine that ticks every 15 minutes on active weekdays inside the working window.
 ---
 
 # kairos-triage-run
@@ -12,17 +12,34 @@ A slot is 15 minutes by default (`schedule.slot_minutes` in `config/config.yaml`
 ## What this skill does
 
 1. Confirm the current working directory is a `kairos-triage-agent` project (contains `RULES.md`, `config/config.yaml`, `.claude/agents/kairos-triage-manager.md`). If not, refuse and tell the user to `cd` into the project.
-2. Spawn two `kairos-triage-manager` subagents in a single `Agent` block, so they run side by side, one per slot mode:
+2. Read the seats file `workspace/.state/seats.json` (see "Seats and rotation" below). Spawn one `kairos-triage-manager` per seat in a single `Agent` block, so they run side by side:
 
    ```
    Run one slot of the Kairos triage agent. Follow your agent-file
    instructions exactly. Working directory: <absolute path>.
-   Mode: build
+   Mode: <seat mode>
    ```
 
-   and the same prompt with `Mode: review`. The build manager only opens and fixes PRs; the review manager only reviews and QAs (see "Slot mode" in the manager file).
+   If neither seat is in `review` mode, add the line `Also: 8e` to the prompt of seat A, so re-review requests and PRs waiting on their authors still get checked. Each mode's order is in "Slot mode" in the manager file.
 
-3. Report both managers' final summary lines back to the user. Do not paraphrase them — the summaries are the record of what happened this slot.
+3. Wait for both managers. Report both summary lines back to the user without paraphrasing them; the summaries are the record of what happened this slot. Then update the seats file from each manager's `slot-result:` line.
+
+## Seats and rotation
+
+No seat keeps one role for long. `workspace/.state/seats.json` holds the two seats:
+
+```json
+{"A": {"mode": "build",  "slots_in_mode": 0, "idle_streak": 0},
+ "B": {"mode": "review", "slots_in_mode": 0, "idle_streak": 0}}
+```
+
+If the file is missing, create it with the values above. After each slot, for each seat:
+
+- Add 1 to `slots_in_mode`.
+- `slot-result: idle` adds 1 to `idle_streak`; `slot-result: work`, or a missing line, resets it to 0.
+- Rotate the seat when `idle_streak` reaches 4 (nothing to do for 4 slots in a row) or `slots_in_mode` reaches 8 (the role has been held long enough). The new mode is the next one in the cycle `review` → `qa` → `build` → `review`. Reset both counters.
+
+Both seats may hold the same mode; the manager file keeps two managers off the same ticket. A seat rotated away from `review` comes back to it within a few cycles, and `Also: 8e` covers the gap meanwhile.
 
 ## What this skill does NOT do
 
@@ -44,7 +61,7 @@ Adjust the times to match `schedule.working_hours` in `config/config.yaml`. Adju
 
 To exercise the pipeline without any GitHub side-effects, either set `KAIROS_TRIAGE_DRY_RUN=1` in the environment before invoking, or `touch workspace/.dry-run` inside the project (the flag file is what a `/loop` cadence uses to toggle between dry-run and live without editing the loop prompt; `rm workspace/.dry-run` flips it back). The manager reads this at startup: it still fetches GitHub state, still runs the rule engine, still spawns worker subagents, and still updates the local envelope, but it does not `gh` any writes and does not `git push`. The composed audit trail is printed to stdout inside `--- BEGIN AUDIT (dry-run) ---` fences and appended to `workspace/.logs/dry-run-<ts>.log`. See the manager's "Dry-run mode" section for the exact set of gated calls.
 
-In dry-run mode the working-window and hard-budget checks are downgraded to warnings so smoke tests can run at any hour.
+In dry-run mode the working-window check is downgraded to a warning so smoke tests can run at any hour.
 
 ## Pinning a ticket for a smoke test
 

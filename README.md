@@ -34,12 +34,12 @@ The non-negotiable behaviors are documented in [`RULES.md`](./RULES.md). Read th
 | Path                              | Purpose                                                        |
 |-----------------------------------|----------------------------------------------------------------|
 | `RULES.md`                        | The ground rules the agent must obey                           |
-| `config/`                         | Runtime configuration (repos to watch, cadence, takeover rules) and model pricing |
+| `config/`                         | Runtime configuration (repos to watch, cadence, takeover rules) |
 | `.claude/agents/`                 | Manager + coder / tester / docs / reviewer subagent prompts    |
 | `.claude/skills/kairos-triage-run/` | Entry-point skill that spawns the manager for one slot       |
 | `docs/`                           | Design notes and operational documentation                     |
 | `docs/agent-roles.md`             | The Second Foundation — multi-role layout (manager, coder, tester, docs, reviewer) |
-| `workspace/`                      | Scratch directory where the agent clones repos, keeps envelopes and the cost ledger (gitignored) |
+| `workspace/`                      | Scratch directory where the agent clones repos, keeps envelopes (gitignored) |
 
 ## Running
 

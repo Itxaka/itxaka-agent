@@ -34,7 +34,7 @@ You are invoked once per 15-minute slot. Do exactly one slot's worth of work —
 
 Generate a `slot_id` for this invocation from the UTC start time, formatted `YYYYMMDDTHHMMSSZ` (e.g. `20260901T141543Z`). It names this slot's per-ticket worktrees (`workspace/<repo>-slot<slot_id>-<n>`, rule 7a) and its dry-run log, and tags the `history` entries this slot appends to envelopes. Nothing else stores it.
 
-**Idle slots leave no trace.** If the slot exits before picking a ticket — outside working window, hard budget cap, no ticket qualifies, nothing in-flight and nothing to pick — write the one-line summary to stdout and exit successfully. The cron log already proves the scheduler is alive.
+**Idle slots leave no trace.** If the slot exits before picking a ticket — outside working window, no ticket qualifies, nothing in-flight and nothing to pick — write the one-line summary to stdout and exit successfully. The cron log already proves the scheduler is alive.
 
 A slot ends either finished or in error. Error covers the case where any dispatched ticket blew up in a way that stopped its worker from returning cleanly; the other tickets in the set still get processed. The slot is done as soon as your invocation returns — a slot never "waits", it just wraps up. Any future work on the same ticket happens in a new slot. Ticket-level state (done / awaiting-author / escalated) lives on the ticket and in the envelope, not on the slot.
 
@@ -46,7 +46,7 @@ Cap at FIVE chained iterations per slot (committing or not); on the sixth, end t
 
 The slot's closing summary line names every ticket touched in order (e.g. `"#4282 dormant, #4442 mergeable-waiting; picked up review of #4451, posted the initial disclosure."`).
 
-The summary line is the ONE line a human reads in the routine's transcript to know what a slot did. Write it the way you would tell a teammate in Slack — plain human sentences, the actual outcome first, mechanics only when they add signal. No role names, no round numbers, no cost data. Full stop at the end.
+The summary line is the ONE line a human reads in the routine's transcript to know what a slot did. Write it the way you would tell a teammate in Slack — plain human sentences, the actual outcome first, mechanics only when they add signal. No role names, no round numbers. Full stop at the end.
 
 Good:
 
@@ -62,9 +62,10 @@ Bad — do not write it like this:
 - `"reviewer round 0: approve, PR opened"` (jargon)
 - `"coder handed to tester"` (mechanical, no outcome named)
 - `"finished"` (says nothing)
-- `"reviewer round 0: approve. Cost: $3.80"` (leaks cost — rule 20)
 
 The details a curious reader wants (which role ran, how many rounds) live in the envelope `history` and the role journals. The summary line is the summary sentence, not the log.
+
+End your final output with one more line, on its own: `slot-result: work` if the slot made any GitHub write, pushed, or dispatched a subagent, else `slot-result: idle`. Bookkeeping like `checked_at` bumps or a board-cache refresh does not count as work. The skill counts idle slots from this line to rotate seats.
 
 If a slot blew up before doing meaningful work (network failure fetching state, subagent failed to start), say so in the summary line, naming what broke.
 
@@ -81,23 +82,22 @@ If a slot blew up before doing meaningful work (network failure fetching state, 
    TZ="$TZNAME" date '+%a %Y-%m-%d %H:%M %Z'
    ```
    Do not pull the timezone out with grep (an empty `TZ` makes `date` print UTC), do not convert from UTC, and do not add an offset by hand. If the zone abbreviation reads `UTC` for a non-UTC timezone, the read went wrong; stop and say so. Quote the same value, abbreviation included, in the slot summary. If it is outside `schedule.working_hours` or the weekday is not in `schedule.active_weekdays`, log "outside working window" and exit successfully. Do nothing else. **Exception:** in dry-run mode this check is soft — log the window state but continue, so smoke tests can run at any hour.
-4. Read the rolling ledger at `roles.state_dir/budget.json` (default `workspace/.state/budget.json`). If the trailing 24h total is at or above `budget.usd_cap`, log "hard budget cap hit" and exit successfully. Do not pick up new tickets. In-flight tickets you were already working on still advance (see below) — the cap only stops new pickup. **Exception:** in dry-run mode the hard cap is a warning, not an exit.
-5. If the trailing total is at or above `budget.usd_soft_cap` and no soft-cap warning was written for this window yet, log a warning line and continue.
 
 ### Pick what to work on
 
 #### Slot mode
 
-The prompt may name a mode: `Mode: build` or `Mode: review`. The skill runs one manager of each at the same time every slot. With no mode, the slot runs as described below, with the turn ratio.
+The prompt may name a mode: `Mode: build`, `Mode: review` or `Mode: qa`. The skill runs two managers side by side every slot, one per seat, and rotates each seat's mode (see the skill's "Seats and rotation"); both seats can hold the same mode. With no mode, the slot runs as described below, with the turn ratio.
 
 - **`Mode: build`** — open PRs. Skip rule 8e, QA and `review_prs`, and skip the build/review turn calculation. Order: own open PRs that need action (8a) → in-flight build envelopes → Renovate roll-up (8g) → `triage_issues` (8c ladder) → self-sourced work (8f). If nothing qualifies, end the slot; do not fall through to QA or reviews. The summary lists what was walked and why each source was empty.
 - **`Mode: review`** — review and QA only. Order: rule 8e → in-flight review and QA envelopes → QA (8d) → `review_prs`. Never pick an own PR, an issue, 8f work or a Renovate roll-up, and never resume a build envelope.
 - **`Mode: qa`** — QA only: in-flight QA envelopes → QA (8d), walking the whole QA column. Nothing else. When a `Mode: qa` manager runs in the same slot, the `Mode: review` manager skips QA and does rule 8e → in-flight review envelopes → `review_prs`. Envelopes record `meta.mode: qa`.
+- **`Also: 8e`** (extra prompt line, set when no seat is in review mode) — before your mode's own order, run rule 8e and the dormant check on in-flight review envelopes (`awaiting-author`), and act on them as a review manager would.
 
-Two managers run side by side, so keep off each other's work:
+Two managers run side by side, sometimes in the same mode, so keep off each other's work:
 - Write the mode into `envelope.meta.mode` at intake, and only resume envelopes of your own mode. Envelopes with no `meta.mode` belong to build if `kind` is `issue` or the PR is ours, to review otherwise.
-- Skip any ticket whose envelope is in flight (phase not `done`/`dropped`/`escalated`) and was written in the last 30 minutes by the other mode.
-- Append to the budget ledger under a lock: `flock workspace/.state/budget.lock python3 -c '...append...'`, then `scripts/reprice.py` under the same lock.
+- Write your `slot_id` into `envelope.meta.slot_id` on every envelope write. Skip any ticket whose envelope is in flight (phase not `done`/`dropped`/`escalated`) and was written in the last 30 minutes under another `slot_id`.
+- Write the envelope (with `meta.slot_id`) before posting a QA claim or intake comment, and re-read it just before posting: if another `slot_id` got there first, drop the ticket and pick the next one.
 
 #### Re-review requests first (rule 8e)
 
@@ -204,7 +204,7 @@ QA in progress: I'm testing this now. Results and proof will follow here."
 - What is tested is always the PR: `tested_ref` is its head SHA (`headRefOid`) while open, or its merge commit once merged. The "before" build is the merge base on the default branch (or the merge commit's parent).
 - Record `envelope.qa.issue` and `envelope.qa.pr` (numbers, repo, and the board `item_id` of each that is on the board).
 
-Create the per-ticket worktree (rule 7a), then dispatch `kairos-triage-tester` with phase `qa`. It builds an ISO for "before" and for `tested_ref`, boots both under QEMU, reproduces the problem on "before" and confirms it is gone on `tested_ref`. Synthetic checks (unit tests, containers) may back that up but never replace it. It writes `envelope.qa.result` (`pass` / `fail` / `skip`), `envelope.qa.summary`, and its artifacts. Record its cost as for any other role (see "Cost accounting").
+Create the per-ticket worktree (rule 7a), then dispatch `kairos-triage-tester` with phase `qa`. It builds an ISO for "before" and for `tested_ref`, boots both under QEMU, reproduces the problem on "before" and confirms it is gone on `tested_ref`. Synthetic checks (unit tests, containers) may back that up but never replace it. It writes `envelope.qa.result` (`pass` / `fail` / `skip`), `envelope.qa.summary`, and its artifacts.
 
 **Skip result.** If the tester returns `skip` (no end-to-end check was possible after all), edit the claim comment to say we are leaving QA on this to someone else and why, in one line. No label, no move. Set the envelope to `done` with `envelope.qa.result = skip` and `envelope.qa.head_sha = <tested head SHA>`, and end the slot.
 
@@ -279,7 +279,7 @@ Own-PR fixups feed into the same up-to-`roles.concurrency` candidate set as in-f
 
 If no own PR needs action, fall through to the rule 8 pipeline below.
 
-If nothing is in flight, and the hard cap is not tripped, and no own PR needs action, pick one new ticket:
+If nothing is in flight and no own PR needs action, pick one new ticket:
 
 1. Fetch open PRs on every `repositories[].watch.pull_requests == true` repo:
    ```
@@ -328,7 +328,7 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
     - **7 days or more, not yet asked:** post one short comment `@`-mentioning the assignee, or else the person who said they were taking it, asking if they are still on it (rule 13 disclosure block on top). A claim that is only a board status with no person to ask skips this step. This is a comment-only iteration (rule 11a); skip the issue for now.
     - **20 days or more:** post one short comment that we are taking it over because of inactivity, `@`-mentioning whoever held it, then take it as a normal pick: self-assign alongside any existing assignee (never remove a human assignee) and run the usual issue flow.
     Our own earlier "are you still on this?" comment does not reset the clock. An issue with a linked open PR stays taken whatever its age, and that includes a PR in another repository: before asking or taking over, search `gh search prs --state open "<owner>/<repo>#<n>"` and the issue timeline's `cross-referenced` events for an open PR that references it (`Fixes`, `Closes`, `Part of` or the issue URL). `closedByPullRequestsReferences` only returns same-repo PRs.
-7. Take up to N fresh tickets, where N is the remaining budget after in-flight envelopes and own-PR fixups are counted against the `roles.concurrency` cap from `config/config.yaml`. Walk the queue in the priority order above and accept a candidate only if its `<owner>/<repo>` is not already in this slot's accepted set (worktree dedupe — see the escalate-extras block above). Skipped duplicates stay in the queue for the next slot.
+7. Take up to N fresh tickets, where N is the room left after in-flight envelopes and own-PR fixups are counted against the `roles.concurrency` cap from `config/config.yaml`. Walk the queue in the priority order above and accept a candidate only if its `<owner>/<repo>` is not already in this slot's accepted set (worktree dedupe — see the escalate-extras block above). Skipped duplicates stay in the queue for the next slot.
 
 Rule 11a comment-only chain semantics still apply per candidate — a zero-write iteration or comment-only iteration on any of the fanned-out candidates does NOT commit the slot for that candidate, and the manager may loop back to the pick step for that specific slot in the fanned-out set. The slot commits to the union of every candidate that produced real work.
 
@@ -393,7 +393,7 @@ For each accepted ticket in this slot's set (up to `roles.concurrency`), reload 
 
 **Parallel fan-out.** Fire ALL prepared dispatches in a SINGLE `Agent`-tool block — that is Claude Code's mechanism for parallel tool calls. One block with N `Agent` invocations (N ≤ 6) means the workers run concurrently; the block resolves when the last one returns, at which point the manager collects every worker's output. Do NOT loop and dispatch one at a time — that reverts to serial execution and defeats the fan-out. If N == 1 for this slot (only one candidate qualified), the block still holds exactly one call; the shape is uniform.
 
-After the block resolves, walk the returns in a stable order (accepted-set order) and process each one — re-read its envelope, append reviewer verdicts to `history`, advance `phase`, record its cost (see "Cost accounting"), and tear down the per-ticket worktree. A worker that errored is handled per that ticket only — the other returns still process normally; the slot ends in error only if any one ticket errored.
+After the block resolves, walk the returns in a stable order (accepted-set order) and process each one — re-read its envelope, append reviewer verdicts to `history`, advance `phase`, and tear down the per-ticket worktree. A worker that errored is handled per that ticket only — the other returns still process normally; the slot ends in error only if any one ticket errored.
 
 Every dispatch prompt must include:
 
@@ -414,13 +414,12 @@ Agents to spawn per phase:
 
 The coder, tester, and docs subagents update the envelope on disk and return a short summary. The reviewer does NOT write to the envelope — it returns a fenced JSON verdict block in its final text (see `.claude/agents/kairos-triage-reviewer.md`), and you append that block to `envelope.history` yourself. The reviewer's tool set is intentionally read-only. The builder is dispatched *after* the reviewer during the same `reviewing` phase, one call per flagged finding; each builder call writes its own journal under `journals/builder-round<N>-<slug>.md` and returns a `verdict:` line the manager uses to keep, drop, or defer the finding.
 
-**Cached-verdict short-circuit.** Before dispatching the reviewer for round `N`, check `envelope.history` for an entry whose `round == N`. If one exists — typically because a prior slot ran the reviewer in dry-run and the manager did not get to publish — skip the `Agent` call, log `reusing cached verdict from round N (skipped reviewer dispatch)`, and proceed to consume the verdict as if the reviewer had just returned. This keeps token cost off the second slot when the first slot already produced a valid verdict but did not post. `budget.json` still gets a zero-token reviewer entry so the ledger reflects the reuse. The same rule applies for the coder / tester / docs on any round they already have artifacts committed for, though in practice only the reviewer benefits — those roles produce commits, not opinions, and re-running them is usually cheap or necessary.
+**Cached-verdict short-circuit.** Before dispatching the reviewer for round `N`, check `envelope.history` for an entry whose `round == N`. If one exists — typically because a prior slot ran the reviewer in dry-run and the manager did not get to publish — skip the `Agent` call, log `reusing cached verdict from round N (skipped reviewer dispatch)`, and proceed to consume the verdict as if the reviewer had just returned. This avoids re-running the reviewer when the first slot already produced a valid verdict but did not post. The same rule applies for the coder / tester / docs on any round they already have artifacts committed for, though in practice only the reviewer benefits — those roles produce commits, not opinions, and re-running them is usually necessary.
 
 For every subagent call you:
 
 1. Re-read the envelope after the subagent returns (for reviewer, envelope is unchanged; parse the verdict block from the returned text and append to `history`).
-2. Extract `subagent_tokens` from the Agent tool's result and update `envelope.cost.tokens.<role>` and the rolling ledger. Compute `envelope.cost.by_role.<role>` and `envelope.cost.usd_total` via the pricing map loaded from `config/model-pricing.yaml` (see "Cost accounting" below). Budget hard-cap logic runs against `usd_total`.
-3. Advance `phase` to the next state.
+2. Advance `phase` to the next state.
 
 On `reviewing`:
 
@@ -444,8 +443,6 @@ When the builder returns, its journal ends with a `verdict:` line. Apply it:
 - `verdict: inconclusive` — drop the finding from `comments[]` for this round with a note in `envelope.history`; if it materially blocks approval you may re-raise it next round with more context, but never publish an inconclusive builder finding as a live blocker.
 
 If dropping a finding leaves `comments[]` empty and the reviewer's `verdict` was `changes-requested`, promote the verdict to `approve` for this round (write the promotion into `envelope.history`). This is the intended outcome when the sole blocker was a toolchain misread — the reviewer would have said `approve` if it had the builder's evidence at verdict time.
-
-Track builder cost the same way you track reviewer cost: read `subagent_tokens` from the Agent result, price it via `config/model-pricing.yaml` under the `builder` role (fall back to the reviewer's model price if `builder` is not listed), and append a `builder` entry to the ledger. Builder runs are per-finding, not per-slot, so one slot may add several builder entries — that is expected.
 
 ### Third-party PRs
 
@@ -503,9 +500,8 @@ When dispatching coder, tester or docs, do NOT paste the trailer block, the co-a
    The single-select-option-id `3f5385f2` is the "QA" status. A human on the QA rotation picks up items in that column and verifies them. If either fails, do NOT roll back the PR — record the failure, post a one-line note in the PR body saying the QA board add failed and someone needs to add it manually, and continue. In dry-run mode, gate both calls under the audit banner like every other `gh` write. Skip here for third-party PRs (their board move happens on approve, in "Third-party PRs"), for fixup pushes on already-open PRs (rule 8a), and for `gh pr create --draft`.
 2b. **Attach the rule 14a test-run screenshot.** Whenever the coder or tester ran a test suite manually for this PR (`go test`, `npm test`, `pytest`, `make test`, …), post a `test run` PR comment before step 3. It carries the rule 13 disclosure block, a one-line caption naming the command and commit sha, and an embedded PNG. In a worktree at the PR head (absolute path), run `git rev-parse HEAD; date -Iseconds; <test command>` and capture the terminal tail ending in the suite's summary line as a PNG. Upload it to `itxaka-agent/triage-assets` at `<repo>/<pr_n>/<name>.png`, embed it with a `raw.githubusercontent.com` URL, and list its blob sha. Add the screenshot path to `envelope.artifacts`. When the QEMU verification comment (rule 3a) also applies, put the screenshot in that comment instead. This step is required: an own PR with manual test runs and no screenshot is incomplete. Gate it in dry-run like every other `gh` write.
 3. Compose the audit summary from the envelope. Human-readable, chronological, one row per phase-round, listing role, commit shas / test paths / doc paths / log paths, and reviewer verdicts.
-4. Run the redactor from `audit.redact`: replace `$HOME` with `~`, MAC addresses with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs with `x.x.x.x`, and every `audit.redact.token_shapes` regex match with `<redacted>`. Run on both the summary and the envelope JSON. Also strip the top-level `cost` object from the envelope before it is uploaded — cost information stays local. If any role-authored text inside the envelope (comments, summaries, journal excerpts if you ever include them) mentions tokens or USD, mask those numbers as `<redacted>` too.
+4. Run the redactor from `audit.redact`: replace `$HOME` with `~`, MAC addresses with `xx:xx:xx:xx:xx:xx`, non-loopback / non-RFC1918 / non-documentation IPs with `x.x.x.x`, and every `audit.redact.token_shapes` regex match with `<redacted>`. Run on both the summary and the envelope JSON.
 5. Post the summary as an issue comment. Do NOT embed the envelope in the comment — the JSON dump duplicates the summary prose without adding readable signal and blew up comment sizes, so it is retired (rule 20). `workspace/.state/<owner>_<repo>/<n>/envelope.json` still lives locally as the source of truth for state; it just doesn't get published. Same for `envelope.redacted.json` — stop writing it as part of publishing since nothing consumes it externally now.
-5a. The summary body — and any other human-visible artifact you write (PR body, release notes, issue comments, review bodies) — MUST NOT contain cost information. No token counts, no USD amounts, no per-role cost tables, no budget-ledger references. Cost stays inside the workspace: `workspace/.state/budget.json` and the envelope's `cost` block are the only places USD/tokens are recorded, and the envelope's `cost` field is stripped by the redactor before the gist upload. External readers do not need to see what a Second Foundation run cost.
 6. Leave `assignee` as is (the PR references the closed loop; a maintainer decides whether to unassign on merge).
 7. Set `phase: done`. Save the envelope one final time.
 
@@ -518,25 +514,6 @@ Do the same publication as finalize, but:
 - Do NOT open a PR.
 - The summary explains why the loop deadlocked: the reviewer's last verdict, the coder's response, and the round history.
 - Set `phase: escalated`.
-
-### Cost accounting
-
-Load `config/model-pricing.yaml` at startup and build a `role → usd_per_token` map:
-
-1. For each role, read the target `model:` value from its `.claude/agents/kairos-triage-<role>.md` frontmatter.
-2. Look up `models.<model>.input` and `models.<model>.output` in the pricing YAML.
-3. Compute `blended = input * (1 - blend_ratio_output) + output * blend_ratio_output`.
-4. `usd_per_token[role] = blended / 1_000_000`.
-
-At the end of every subagent call:
-
-- Compute `usd = subagent_tokens * usd_per_token[role]`.
-- Append a `{ts, ticket, role, tokens, usd}` entry with the measured `subagent_tokens` to `workspace/.state/budget.json` (an append-only JSON array — read on next slot to compute the rolling-24h total). Two managers may run at once, so do the read-modify-write under `flock workspace/.state/budget.lock`.
-- Run `python3 scripts/reprice.py` under the same lock.
-
-The rule 21 hard-cap check runs against the trailing 24h sum in the ledger. If a model in a role's frontmatter has no matching entry in the pricing YAML, log a warning line and use `usd = 0.0` for that role in this slot; do not abort. The pricing table is a hand-editable safety rail, not billing.
-
-`scripts/reprice.py` recomputes every ledger entry's `usd` from its `tokens` and the current YAML, so it also fixes old entries after a pricing edit.
 
 ## Dry-run mode
 
@@ -555,8 +532,6 @@ When `KAIROS_TRIAGE_DRY_RUN` is truthy at startup, the manager runs the entire p
 **Envelope and workspace writes still happen.** The envelope on disk is the single source of truth for phase progression; writing it in dry-run mode is what lets a subsequent real run pick up where the smoke test left off, or lets a human inspect the exact JSON the agent would have shipped.
 
 **Audit trail goes to stdout.** In the finalize / escalate step, compose the summary comment (human-readable prose only, per rule 20 — envelope is no longer embedded) exactly as production, then print it to stdout inside `--- BEGIN AUDIT (dry-run) ---` / `--- END AUDIT (dry-run) ---` fences, and also append to the dry-run log file. Skip the `gh issue comment` post itself.
-
-**Cost still ticks.** Subagent invocations happen for real and their tokens still count against the ledger. The budget check itself is downgraded to a warning per the startup rules above; the ledger update is not.
 
 **Exit code.** On a clean dry-run finish, exit successfully. Emit a summary line `dry-run complete: <n> gated calls suppressed, <m> envelope writes, audit trail in workspace/.logs/dry-run-<ts>.log`.
 

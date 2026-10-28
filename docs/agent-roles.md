@@ -143,7 +143,7 @@ Set in `config/config.yaml` under `roles:`:
 
 - `max_review_rounds` — hard cap on the reviewer/worker loop.
 - `state_dir` — where envelopes are persisted; default `workspace/.state`.
-- Per-role runtime settings (model choice, token budget, timeout) live here as well and are filled in when the runtime is chosen.
+- Per-role runtime settings (model choice, timeout) live here as well and are filled in when the runtime is chosen.
 
 ## Decisions
 
@@ -151,22 +151,5 @@ The design-phase open questions from an earlier draft are now locked in:
 
 - **Isolation.** Each role runs as its own **subprocess** (`roles.isolation: subprocess`). Clean crash boundaries, fresh LLM context per role, and structural reviewer independence. Rule 22.
 - **Concurrency.** The manager keeps up to **6 tickets in flight** per slot (`roles.concurrency: 6`). A single manager invocation fans out that many worker subagents in parallel — one per accepted ticket — inside one `Agent`-tool block. The upper bound is per-repo worktree isolation: candidates are deduped by `<owner>/<repo>` before dispatch, and duplicates defer to the next slot. Rule 11 slot alignment still holds — the slot closes when the last subagent returns.
-- **Cost caps.** Budget is **global** over a rolling window, not per-ticket. Some tickets are expensive-but-legitimate; capping them individually would either strangle or miss. See rule 21 and `config/config.yaml` `budget:`.
 - **Reviewer independence.** Subprocess isolation already gives the reviewer a fresh context, so it never sees the coder's live reasoning. Model choice is per role (`roles.runtimes.<role>.model`) so an operator can further widen the perspective gap by picking a different model family for the reviewer.
 
-## Envelope cost accounting
-
-Envelopes carry a `cost` block that the manager updates as each role reports back. This drives the rolling-window ledger at `workspace/.state/budget.json` for rule 21.
-
-```json
-"cost": {
-  "usd_total": 1.23,
-  "by_role": {
-    "coder":    0.85,
-    "tester":   0.20,
-    "docs":     0.00,
-    "reviewer": 0.15,
-    "manager":  0.03
-  }
-}
-```

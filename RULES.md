@@ -552,13 +552,14 @@ If no matching release-meta ticket exists, the priority queue is empty and the p
 
 ## 17. Manager holds sole authority for external actions
 
-The agent runs as a small collective of specialized roles — **manager**, **coder**, **tester**, **docs**, **reviewer** — described in [`docs/agent-roles.md`](docs/agent-roles.md). Only the manager makes state-changing calls against GitHub or against the fork remote:
+The agent runs as a small collective of specialized roles — **manager**, **coder**, **tester**, **docs**, **reviewer**, **builder**, **hunter** — described in [`docs/agent-roles.md`](docs/agent-roles.md). Only the manager makes state-changing calls against GitHub or against the fork remote:
 
 - Self-assign, unassign.
 - Issue and PR comments (including review bodies).
 - PR create / edit / mark-ready-for-review.
 - `git push` to the fork.
 - Release-note or changelog edits on upstream.
+- Issue create and label edits (the hunt, rule 23).
 
 Worker roles read from GitHub freely and mutate the local workspace freely, but they hand every human-visible artifact to the manager for publication. This funnels rule 4 (never silent), rule 12 (self-assignment visibility), and rule 13 (disclosure) through one code path with one audit trail. A worker that tries to call the GitHub write API is a bug in the agent.
 
@@ -617,3 +618,16 @@ Every role runs in its own subprocess. Consequences:
 Model choice is per role, configured under `roles.runtimes.<role>.model`. The default assignments in `config/config.yaml` reflect the workload weight of each role. Operators may swap in different models — for example, deliberately picking a different model family for the reviewer to widen the perspective gap — without any code change.
 
 Concurrency is `roles.concurrency: 6`. A single manager invocation fans out up to 6 worker subagents in parallel per slot — one per accepted ticket — inside one `Agent`-tool block. The upper bound is per-repo worktree isolation: two candidates on the same `<owner>/<repo>` cannot run in the same slot because they would collide on the shared object store, so the manager dedupes accepted candidates by repo and defers duplicates to the next slot. Rule 11 slot alignment still holds — the slot closes when the last subagent returns.
+
+## 23. The hunt: find real problems and file them
+
+A separate track looks for problems nobody has filed yet: bugs, shortcomings and missing features in the Kairos repos listed under `hunt.repos` in `config/config.yaml`. It runs in batches of 30 minutes (`hunt.batch_minutes`), on its own cadence, independent of the two seats and their slots, inside the same working window (rule 11). The `kairos-triage-hunt` skill starts a manager in `Mode: hunt`; that manager dispatches `kairos-triage-hunter` subagents and files the issues itself (rule 17).
+
+- **Proof, not hunches.** A finding is filed only with a reproduction (command output, a failing test, a QEMU run), or with exact code or docs references that contradict each other on their own. A second hunter, with a fresh context and nothing but the finding, must re-derive and confirm it before it is filed. Repo code runs only in containers or QEMU, never on the host.
+- **No cap.** Every confirmed finding becomes an issue. Ten real problems mean ten issues.
+- **No duplicates.** Search open and closed issues first. An open match gets the new evidence as a comment; a closed one that came back gets a new issue that links it and says it regressed.
+- **Where.** Hadron findings go to `kairos-io/hadron`; everything else goes to `kairos-io/kairos`, the central tracker, naming the repo in the body.
+- **Labels.** As many existing labels as fit: one kind (`bug` or `enhancement`) plus every matching area and topic label. Never create a label.
+- **Coverage.** A cursor in `workspace/.state/hunt-cursor.json` rotates through repos and areas, so each batch covers new ground and an area is not re-hunted at the same commit or within 7 days.
+
+Issues filed by the hunt enter the normal queue; the hunt does not fix what it finds.

@@ -57,6 +57,14 @@ The builder writes a small program in a scratch directory, runs it, records comm
 - **Never:** edits target-repo files, calls GitHub, builds the whole product to check a compile-time detail, opines on the wider PR.
 - **Wall-clock cap:** `roles.builder_wallclock_seconds` in `config.yaml` (default 900s). Beyond the cap the builder returns `inconclusive` — real toolchain rebuilds are not this role's job.
 
+### Hunter
+
+Finds problems nobody has filed yet (rule 23). A manager in `Mode: hunt`, started every 30 minutes by the `kairos-triage-hunt` skill, gives each hunter one area of one repo at a fixed commit. In `find` phase the hunter reads the code end to end and proves each bug, shortcoming or missing feature with a reproduction in a container or QEMU, a failing test, or contradicting `path:line` references. In `verify` phase a fresh hunter gets one finding and nothing else and must re-derive it before the manager files it.
+
+- **Inputs:** `phase`, repo, area, checkout at `sha`, scratch directory, known issues for the area.
+- **Outputs:** a journal and a JSON block of findings (or one verify verdict) with evidence and suggested labels.
+- **Never:** calls GitHub, edits the target repo, runs repo code on the host, reports hunches or style nits.
+
 ## Handoff envelope
 
 Every handoff carries this JSON envelope, persisted to `workspace/.state/<repo>/<ticket>/envelope.json`:

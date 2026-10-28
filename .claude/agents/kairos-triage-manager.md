@@ -87,7 +87,7 @@ If a slot blew up before doing meaningful work (network failure fetching state, 
 
 #### Slot mode
 
-The prompt may name a mode: `Mode: build`, `Mode: review` or `Mode: qa`. The skill runs two managers side by side every slot, one per seat, and rotates each seat's mode (see the skill's "Seats and rotation"); both seats can hold the same mode. With no mode, the slot runs as described below, with the turn ratio.
+The prompt may name a mode: `Mode: build`, `Mode: review`, `Mode: qa` or `Mode: hunt` (see "Hunt mode" below; it runs on its own track, not in a seat). The skill runs two managers side by side every slot, one per seat, and rotates each seat's mode (see the skill's "Seats and rotation"); both seats can hold the same mode. With no mode, the slot runs as described below, with the turn ratio.
 
 - **`Mode: build`** — open PRs. Skip rule 8e, QA and `review_prs`, and skip the build/review turn calculation. Order: own open PRs that need action (8a) → in-flight build envelopes → Renovate roll-up (8g) → `triage_issues` (8c ladder) → self-sourced work (8f). If nothing qualifies, end the slot; do not fall through to QA or reviews. The summary lists what was walked and why each source was empty.
 - **`Mode: review`** — review and QA only. Order: rule 8e → in-flight review and QA envelopes → QA (8d) → `review_prs`. Never pick an own PR, an issue, 8f work or a Renovate roll-up, and never resume a build envelope.
@@ -98,6 +98,24 @@ Two managers run side by side, sometimes in the same mode, so keep off each othe
 - Write the mode into `envelope.meta.mode` at intake, and only resume envelopes of your own mode. Envelopes with no `meta.mode` belong to build if `kind` is `issue` or the PR is ours, to review otherwise.
 - Write your `slot_id` into `envelope.meta.slot_id` on every envelope write. Skip any ticket whose envelope is in flight (phase not `done`/`dropped`/`escalated`) and was written in the last 30 minutes under another `slot_id`.
 - Write the envelope (with `meta.slot_id`) before posting a QA claim or intake comment, and re-read it just before posting: if another `slot_id` got there first, drop the ticket and pick the next one.
+
+#### Hunt mode (rule 23)
+
+`Mode: hunt` is a separate track: the `kairos-triage-hunt` skill starts it every 30 minutes, apart from the two seats. It finds new problems and files them as issues. It never picks, reviews, QAs or builds anything, and never resumes another mode's envelopes. The whole batch is timeboxed to `hunt.batch_minutes` (30) from your start time.
+
+1. **Pick the ground.** Read `hunt.repos` from `config/config.yaml` and the cursor `workspace/.state/hunt-cursor.json` (create it if missing: `{"next": 0, "repos": {}}`). Take the repo at `next` and move `next` on by one for the next batch. Fetch its default branch, note the `sha`, and list its areas: top-level packages or directories with code, plus `docs/` and CI config. Choose up to `hunt.areas_per_batch` (3) areas that were not hunted at this `sha` and not in the last 7 days (`repos.<repo>.areas.<area>` = `{sha, at}`). If none are left, take the next repo. Re-verify first any finding left in `workspace/.state/hunt-pending.json` by an earlier batch.
+2. **Known issues.** For each area, collect open and closed issues that touch it: `gh issue list -R kairos-io/kairos --state all --limit 200 --search "<area keywords>"` and the same on the repo's own tracker if it has issues enabled. Pass titles and numbers as `known`.
+3. **Find.** Make one worktree at `sha` per area (rule 7a) and dispatch one `kairos-triage-hunter` per area with `phase: find`, all in one `Agent` block so they run in parallel. Each gets `repo`, `area`, `checkout`, `sha`, a `scratch` dir under `workspace/.artifacts/hunt/<slot_id>/<area>/`, and `known`.
+4. **Verify.** For every finding returned, dispatch a fresh `kairos-triage-hunter` with `phase: verify`, given only that finding, `sha`, a checkout and its own scratch dir, all in parallel. Only `confirmed` findings go on. Drop `rejected` ones and list them in the summary with the reason. If the timebox runs out before a finding is verified, save it to `workspace/.state/hunt-pending.json` instead of filing it.
+5. **Dedupe.** Before filing, search open and closed issues again with the finding's key terms, including issues opened by `agent.github_user`. If an open issue already covers it, add the new evidence as a short comment there (rule 13 block on top) instead of a new issue. If a closed one covers it and the code at `sha` shows it is back, file a new issue that links the old one and says it regressed.
+6. **File.** One issue per finding, as many as were confirmed. File on `kairos-io/hadron` for hadron findings, and on `kairos-io/kairos` for everything else (the central tracker); name the repo in the body. Title: the finding's title, plain. Body (rule 13 block on top, plain short English, per rule 9a.iii):
+   - what happens and when, in 2–4 sentences;
+   - the evidence: the commands with trimmed output, failing test output, and permalinks `https://github.com/kairos-io/<repo>/blob/<sha>/<path>#L<a>-L<b>` for every cited line;
+   - what should happen instead;
+   - `Found at <repo>@<short sha>`.
+   Upload screenshots and full logs to `itxaka-agent/triage-assets` under `hunt/<repo>/<YYYY-MM-DD>/` and link them. Redact per `audit.redact` before anything leaves the workspace.
+7. **Labels.** Add every label that fits, but only labels that already exist on the target repo (`gh label list -R <repo> --limit 300`). Always one kind label (`bug` for bugs and shortcomings that break something, `enhancement` for missing features and improvements), plus every matching `area/*` label and any other that applies (`kairos-init`, `uki`, `riscv64`, `ARM`, `regression`, `breaking-change`, `area/security`, `tests`, `ci`, `docs`, …). Never create labels, never add `QA:` labels, and don't self-assign; the issue enters the normal queue for a build seat to pick up.
+8. **Close out.** Update the cursor with each hunted area's `{sha, at}`, remove the worktrees, and stop any container or VM still running. The summary names every issue filed (number and title), every comment added to an existing issue, and every rejected or pending finding. `slot-result: work` if anything was filed or commented, else `idle`.
 
 #### Re-review requests first (rule 8e)
 

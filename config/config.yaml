@@ -132,6 +132,27 @@ roles:
   # finding rather than block.
   builder_wallclock_seconds: 900
 
+# The hunt: a separate track that finds real problems and files issues.
+# See RULES.md rule 23 and the kairos-triage-hunt skill.
+hunt:
+  # Length of one batch; also the gap between batch starts.
+  batch_minutes: 30
+  # Hunter subagents dispatched in parallel per batch, one per area.
+  areas_per_batch: 3
+  # Repositories to hunt, in rotation. Findings are filed on
+  # kairos-io/kairos, except hadron's, which go to kairos-io/hadron.
+  repos:
+    - kairos-io/kairos
+    - kairos-io/kairos-agent
+    - kairos-io/immucore
+    - kairos-io/kairos-init
+    - kairos-io/kairos-sdk
+    - kairos-io/hadron
+    - kairos-io/AuroraBoot
+    - kairos-io/provider-kubernetes
+    - kairos-io/kairos-operator
+    - kairos-io/kcrypt-challenger
+
 # Audit trail publication. See RULES.md rule 20.
 audit:
   # Where the summary lives. Currently: a comment on the issue, with the PR

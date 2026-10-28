@@ -41,6 +41,8 @@ If the file is missing, create it with the values above. After each slot, for ea
 
 Both seats may hold the same mode; the manager file keeps two managers off the same ticket. A seat rotated away from `review` comes back to it within a few cycles, and `Also: 8e` covers the gap meanwhile.
 
+The hunt (rule 23) runs beside the seats on its own 30-minute cadence; see the `kairos-triage-hunt` skill.
+
 ## What this skill does NOT do
 
 - It does not loop. One invocation = one slot. The scheduler handles cadence.

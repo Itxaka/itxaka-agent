@@ -155,6 +155,8 @@ On a review turn, or on a build turn with no build work, QA a card from the boar
 
 **List the column.**
 
+**Board cache.** Listing the board costs a large share of the hourly GraphQL quota, and two managers run per slot. Reuse `workspace/.state/qa-board.json` when it is under 30 minutes old; otherwise list the board with the command below, write the result there with a `fetched_at` timestamp, and use that. Re-read a single card's status with `gh pr view <n> --json projectItems` before moving it, never the whole board.
+
 ```
 gh project item-list 1 --owner kairos-io --limit 5000 --format json \
   --jq '.items[] | select(.status=="QA") | select(.content.type=="Issue" or .content.type=="PullRequest")
@@ -255,7 +257,7 @@ On a build turn, check own open PRs first (rule 8a), before in-flight envelopes;
 For each `repositories[]` entry:
 
 ```
-gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open \
+gh pr list --repo <owner>/<repo> --author <agent.github_user> --state open --limit 200 \
   --json number,url,title,assignees,mergeable,reviewDecision,headRefOid,statusCheckRollup
 ```
 
@@ -279,8 +281,9 @@ If nothing is in flight, and the hard cap is not tripped, and no own PR needs ac
 
 1. Fetch open PRs on every `repositories[].watch.pull_requests == true` repo:
    ```
-   gh pr list --repo <owner>/<repo> --state open --json number,title,author,assignees,labels,reviewRequests,reviews,url,updatedAt
+   gh pr list --repo <owner>/<repo> --state open --limit 1000 --json number,title,author,assignees,labels,reviewRequests,reviews,url,updatedAt
    ```
+   `gh pr list` returns only 30 PRs without `--limit`, and AuroraBoot alone has more open PRs than that. Always pass `--limit 1000`, here and on every other `gh pr list` / `gh issue list` that feeds a walk. Before calling `review_prs` empty, name in the summary every non-draft, non-bot, non-own PR you passed over and why.
 2. Fetch open issues on every repo with `watch.issues: true` (currently hadron and kairos), in config order.
 3. Compute the release-meta priority queue per rule 16:
    - Enumerate open issues on `kairos-io/kairos` matching `release_meta.detection` (label OR title regex).

@@ -138,7 +138,7 @@ An issue claimed by someone (a human assignee, a comment saying they are taking 
 - **7 days or more:** ask once. One short comment `@`-mentioning the assignee, or the person who said they were taking it, asking if they are still working on it. A claim that is only a board status, with nobody to ask, skips this step.
 - **20 days or more:** take it over. One short comment saying we are taking it because of inactivity, mentioning whoever held it, then the normal issue flow. The agent adds itself as assignee and never removes a human assignee.
 
-The agent's own "still on this?" comment does not reset the count. An issue with a linked open PR is taken however old it is; this rule is about issues, not other people's PRs.
+The agent's own "still on this?" comment does not reset the count. An issue with a linked open PR is taken however old it is; this rule is about issues, not other people's PRs. A linked PR includes one in another repository: an open PR anywhere that references the issue (`Fixes`, `Closes` or `Part of <owner>/<repo>#<n>`, or the full issue URL) holds it, because GitHub's own link lookup only sees same-repo PRs.
 
 ## 6. Clone repositories into the workspace
 

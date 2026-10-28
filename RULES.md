@@ -127,9 +127,18 @@ Someone else may fix the issue while our envelope is in flight, especially when 
 
 ## 5. Do not touch tickets already assigned to a human
 
-If an issue or PR already has an assignee that is not the agent's own account, the agent leaves it alone — no comments, no takeover, no "helpful" suggestions. The only exception is when the assignee explicitly `@mentions` the agent asking for help.
+If an issue or PR already has an assignee that is not the agent's own account, the agent leaves it alone — no comments, no takeover, no "helpful" suggestions. The exceptions are when the assignee explicitly `@mentions` the agent asking for help, and the stale-claim steps for issues in rule 5a.
 
 **Self-assignment carve-out.** A ticket whose sole assignee is its own author is treated as unassigned for this rule. The block exists to keep the agent off tickets a *different* human is already triaging, not to lock the Second Foundation out of every human-authored PR (contributors routinely self-assign their own PRs). If the assignee set contains any login other than the ticket author, the rule applies as written.
+
+## 5a. Stale claims on issues
+
+An issue claimed by someone (a human assignee, a comment saying they are taking it, or a working-column board status) but with no linked open PR does not stay claimed forever. Count the days since the last activity by anyone but the agent (comments, linked commits, assignment, label or status changes):
+
+- **7 days or more:** ask once. One short comment `@`-mentioning the assignee, or the person who said they were taking it, asking if they are still working on it. A claim that is only a board status, with nobody to ask, skips this step.
+- **20 days or more:** take it over. One short comment saying we are taking it because of inactivity, mentioning whoever held it, then the normal issue flow. The agent adds itself as assignee and never removes a human assignee.
+
+The agent's own "still on this?" comment does not reset the count. An issue with a linked open PR is taken however old it is; this rule is about issues, not other people's PRs.
 
 ## 6. Clone repositories into the workspace
 
@@ -188,7 +197,7 @@ The scheduler normally runs two managers per slot side by side, one in `Mode: bu
 2. `bug`-labeled unassigned issues, oldest first — the historical scope, still the highest-value non-meta work.
 3. Everything else unassigned — `enhancement`, `documentation`, `chore`, `papercut`, `good first issue`, `help wanted`, `governance`, `spike`, unlabeled — oldest first. Skip labels in `rules.yaml` (`do-not-triage`, `needs-design`, `discussion`, `RFC`, `needs-info`, `blocked`) still apply and take priority over the walk.
 
-**Already taken means a closing link, not a mention.** An issue is taken when an open PR closes it (GitHub's `closedByPullRequestsReferences`, i.e. a `Fixes`/`Closes` link) or a project Status puts it in a working column. A PR that only mentions or cross-references the issue does not take it. Walk every candidate on a rung before calling the rung empty; do not sample a few and stop.
+**Already taken means a closing link, not a mention.** An issue is taken when an open PR closes it (GitHub's `closedByPullRequestsReferences`, i.e. a `Fixes`/`Closes` link) or a project Status puts it in a working column; a claim without a linked open PR goes stale per rule 5a. A PR that only mentions or cross-references the issue does not take it. Walk every candidate on a rung before calling the rung empty; do not sample a few and stop.
 
 Rung 3 only fires when rungs 1 and 2 are empty. A bug the agent could take is never skipped in favour of an enhancement. Within rung 3 the manager still gates on whether it can meaningfully act — a pure-discussion `epic` with no concrete deliverable, or a stalled `spike`, is walked past like a skip-labelled ticket (log the reason, move on). An enhancement that is too big or too vague for one PR is not walked past for that reason alone: take one concrete, testable slice of it. Say on the issue which slice, open the PR with `Part of #N` instead of `Fixes`, and leave the issue open. Walk past it only when a skip label applies or a maintainer has asked to hold it. The action for a rung-3 pick is the normal issue flow: post a takeover comment, self-assign, spawn the coder/tester loop; the QEMU reproduction sub-flow only applies when `rules.yaml` sets `reproduce_in_qemu: true`, which the catch-all rule does not.
 

@@ -228,7 +228,7 @@ For each hit, run a fresh reviewer round at the current head (`round++`, regener
 
 ## 8d. QA of board cards
 
-QA leads a review turn (rule 8c), and on a build turn it runs only when there is no build work. When it is QA's turn, the manager checks the **QA** column of the kairos-io org board (project 1) and, if a card there qualifies, spends the slot QA-ing it. One card per slot. An in-flight QA envelope (phase `qa`) resumes ahead of a fresh QA pick.
+QA leads a review turn (rule 8c), and on a build turn it runs only when there is no build work. When it is QA's turn, the manager checks the **QA** column of the kairos-io org board (project 1) and, if a card there qualifies, spends the slot QA-ing it. One card per slot when it needs a VM boot; a slot may QA up to four cards whose proof is CI runs, existing logs or a docs build ("Changes a VM boot cannot show"), since those take minutes rather than an ISO build. An in-flight QA envelope (phase `qa`) resumes ahead of a fresh QA pick.
 
 **Which card.** Walk the cards whose Status is `QA` and take the first one that passes all of:
 

@@ -150,7 +150,7 @@ Before accepting, check nobody is on it: `gh pr list --repo <o>/<r> --state open
 
 #### QA next (rule 8d)
 
-On a review turn, or on a build turn with no build work, QA a card from the board's `QA` column if one qualifies. An operator pin (`KAIROS_TRIAGE_PICK` or `workspace/.pin-next`, startup checks 2/2a) still wins over QA. One QA card per slot; a QA pick commits the slot once the tester is dispatched, and is subject to the same repo dedupe as any other pick.
+On a review turn, or on a build turn with no build work, QA a card from the board's `QA` column if one qualifies. An operator pin (`KAIROS_TRIAGE_PICK` or `workspace/.pin-next`, startup checks 2/2a) still wins over QA. One QA card per slot when it needs a VM boot (the tester builds and boots ISOs); up to four cards per slot when each is QA'd from CI runs, logs or a docs build under rule 8d "Changes a VM boot cannot show". A VM-boot QA pick commits the slot once the tester is dispatched, and is subject to the same repo dedupe as any other pick.
 
 **Resume first.** If an envelope with `phase: qa` exists (and is not `done`/`dropped`/`escalated`), resume it: go straight to "Dispatch" or "Report" below depending on whether `envelope.qa.result` is set.
 

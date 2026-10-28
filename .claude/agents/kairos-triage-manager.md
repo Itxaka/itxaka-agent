@@ -336,6 +336,7 @@ If no ticket qualifies and the accepted set is empty, log "nothing to do this sl
 
 For the ticket you picked:
 
+0. **Duplicate check before any work.** Once you know which file or function the fix will touch (read the issue and grep the code first), search the open PRs in the repos it could land in: `gh pr list --repo <o>/<r> --state open --limit 1000 --search "<file path or function name> in:body,title"`, plus `gh pr list ... --json number,files` filtered to PRs that change that file. If an open PR already changes the same code for the same problem, drop the pick as a zero-write iteration before commenting, assigning or dispatching the coder. The rule 4c recheck before pushing still runs; this catches the duplicate before the coder and reviewer spend a slot on it.
 1. Post the initial "taking over" comment via `gh issue comment` / `gh pr comment`. It must begin with the rule 13 disclosure block:
 
    ```

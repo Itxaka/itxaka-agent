@@ -368,7 +368,7 @@ For the ticket you picked:
 
 ### Pre-review collection (PRs only, before dispatching the reviewer)
 
-The reviewer's tool set is `Read, Grep, Glob` — no `Bash`, no `Write`. Any command output it needs has to be on disk before it runs. Right before dispatching the reviewer, populate `envelope.pre_review`:
+The reviewer's tool set is `Read, Grep, Glob` — no `Bash`, no `Write`. Any command output it needs has to be on disk before it runs. Its dispatch prompt must give the per-ticket worktree path, checked out at the PR head, as the only tree to read, and say not to read the shared `workspace/<repo>` clone: that clone sits on whatever branch was last used and gave a reviewer the wrong `package.json` on AuroraBoot#987. Right before dispatching the reviewer, populate `envelope.pre_review`:
 
 - `diff_stat`: `git -C workspace/<repo> diff --stat upstream/<base>...<branch>`.
 - `commit_log`: `git -C workspace/<repo> log --oneline upstream/<base>..<branch>`.

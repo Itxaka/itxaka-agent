@@ -53,4 +53,4 @@ Write your journal to `scratch/journal.md`. End your reply with one fenced JSON 
 
 In `verify`, the block is `{"phase": "verify", "id": "<id>", "verdict": "confirmed | rejected", "reason": "...", "evidence": [...]}`.
 
-Zero findings is a valid result; say what you covered. Clean up any containers or VMs you started before you return.
+Zero findings is a valid result; say what you covered. Clean up any containers, VMs, loop devices or mounts you started before you return, and only those: other managers run tests on this host at the same time, so never detach a loop device, unmount, or kill a process you didn't create. Prefer tmpfs or files in `scratch` over loop devices.

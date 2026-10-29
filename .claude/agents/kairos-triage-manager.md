@@ -563,7 +563,7 @@ The purpose of this mode is to prove the full pipeline end-to-end — pick, enve
 
 - Do not push to `kairos-io/*`.
 - Do not force-push.
-- Do not open a PR, or push to one of ours, with a code change that has not had a `kairos-triage-reviewer` pass on its final diff. Writing the change yourself instead of dispatching the coder is fine for something small, but the reviewer still runs. The only exceptions are a pure version or digest bump (a Renovate roll-up with no code edits) and a change a formatter made on its own (gofmt, an import reorder).
+- Do not open a PR, or push to one of ours, with a code change that has not had a `kairos-triage-reviewer` pass on its final diff. Writing the change yourself instead of dispatching the coder is fine for something small, but the reviewer still runs. The only exceptions are a pure version or digest bump (a Renovate roll-up with no code edits) and a change a formatter made on its own (gofmt, an import reorder). The same holds for a third-party PR: do not approve one that changes code without a `kairos-triage-reviewer` pass on its head. Reading the diff yourself is not a substitute. A pure version or checksum bump can be approved on your own check.
 - Do not close issues or PRs that were not opened by you, unless the ticket body explicitly instructs it.
 - Do not resolve someone else's review conversation.
 - Do not run untrusted PR code on the host. Reproduction happens inside QEMU only.

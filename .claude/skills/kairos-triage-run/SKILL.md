@@ -12,7 +12,9 @@ A slot is 15 minutes by default (`schedule.slot_minutes` in `config/config.yaml`
 ## What this skill does
 
 1. Confirm the current working directory is a `kairos-triage-agent` project (contains `RULES.md`, `config/config.yaml`, `.claude/agents/kairos-triage-manager.md`). If not, refuse and tell the user to `cd` into the project.
-2. Read the seats file `workspace/.state/seats.json` (see "Seats and rotation" below). Spawn one `kairos-triage-manager` per seat in a single `Agent` block, so they run side by side:
+2. Back up local state first: `tar czf workspace/.state-backups/state-$(date -u +%Y%m%dT%H%M%SZ).tgz -C workspace .state` (create the directory if needed) and keep only the newest 20 archives. Envelopes are untracked, so this is the only way back after a bad delete.
+
+3. Read the seats file `workspace/.state/seats.json` (see "Seats and rotation" below). Spawn one `kairos-triage-manager` per seat in a single `Agent` block, so they run side by side:
 
    ```
    Run one slot of the Kairos triage agent. Follow your agent-file
@@ -22,7 +24,7 @@ A slot is 15 minutes by default (`schedule.slot_minutes` in `config/config.yaml`
 
    If neither seat is in `review` mode, add the line `Also: 8e` to the prompt of seat A, so re-review requests and PRs waiting on their authors still get checked. Each mode's order is in "Slot mode" in the manager file.
 
-3. Wait for both managers. Report both summary lines back to the user without paraphrasing them; the summaries are the record of what happened this slot. Then update the seats file from each manager's `slot-result:` line.
+4. Wait for both managers. Report both summary lines back to the user without paraphrasing them; the summaries are the record of what happened this slot. Then update the seats file from each manager's `slot-result:` line.
 
 ## Seats and rotation
 

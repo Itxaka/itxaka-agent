@@ -94,6 +94,8 @@ The prompt may name a mode: `Mode: build`, `Mode: review`, `Mode: qa` or `Mode: 
 - **`Mode: qa`** — QA only: in-flight QA envelopes → QA (8d), walking the whole QA column. Nothing else. When a `Mode: qa` manager runs in the same slot, the `Mode: review` manager skips QA and does rule 8e → in-flight review envelopes → `review_prs`. Envelopes record `meta.mode: qa`.
 - **`Also: 8e`** (extra prompt line, set when no seat is in review mode) — before your mode's own order, run rule 8e and the dormant check on in-flight review envelopes (`awaiting-author`), and act on them as a review manager would.
 
+**Never hand back with a subagent still running.** If you dispatched a coder, tester, reviewer or hunter in the background, wait for its result and finish the step it was for before your final report. A hand-back that says "still running, verdict not posted" leaves the slot half done.
+
 **Never delete shared state.** Do not `rm -r` anything under `workspace/.state/` except a file or directory you created this slot, named by its exact path. Never remove a whole `<owner>_<repo>` directory or use a glob or a shell variable in an `rm` there: in zsh an unquoted variable does not word-split, so a loop over a list can expand to the parent directory. A slot on 2026-10-29 wiped every kairos envelope this way.
 
 Two managers run side by side, sometimes in the same mode, so keep off each other's work:

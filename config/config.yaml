@@ -140,18 +140,18 @@ hunt:
   # Hunter subagents dispatched in parallel per batch, one per area.
   areas_per_batch: 3
   # Repositories to hunt, in rotation. Every finding is filed on
-  # kairos-io/kairos, the central tracker.
+  # kairos-io/kairos, the central tracker. kairos-agent, immucore,
+  # kairos-init, kairos-sdk and kcrypt-challenger are archived; their code
+  # lives in the kairos monorepo (agent/, immucore/, kairos-init/, sdk/,
+  # kcrypt/), which is why kairos is listed twice per rotation.
   repos:
     - kairos-io/kairos
-    - kairos-io/kairos-agent
-    - kairos-io/immucore
-    - kairos-io/kairos-init
-    - kairos-io/kairos-sdk
     - kairos-io/hadron
+    - kairos-io/kairos
     - kairos-io/AuroraBoot
+    - kairos-io/kairos
     - kairos-io/provider-kubernetes
     - kairos-io/kairos-operator
-    - kairos-io/kcrypt-challenger
 
 # Audit trail publication. See RULES.md rule 20.
 audit:

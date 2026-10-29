@@ -624,7 +624,8 @@ Concurrency is `roles.concurrency: 6`. A single manager invocation fans out up t
 A separate track looks for problems nobody has filed yet: bugs, shortcomings and missing features in the Kairos repos listed under `hunt.repos` in `config/config.yaml`. It runs in batches of 30 minutes (`hunt.batch_minutes`), on its own cadence, independent of the two seats and their slots, inside the same working window (rule 11). The `kairos-triage-hunt` skill starts a manager in `Mode: hunt`; that manager dispatches `kairos-triage-hunter` subagents and files the issues itself (rule 17).
 
 - **Proof, not hunches.** A finding is filed only with a reproduction (command output, a failing test, a QEMU run), or with exact code or docs references that contradict each other on their own. A second hunter, with a fresh context and nothing but the finding, must re-derive and confirm it before it is filed. Repo code runs only in containers or QEMU, never on the host.
-- **No cap.** Every confirmed finding becomes an issue. Ten real problems mean ten issues.
+- **Security goes private.** Anything an attacker could use is reported through the repo's private vulnerability reporting (GitHub Security Advisory), as SECURITY.md asks, never as a public issue, comment, commit or PR. When in doubt, private.
+- **No cap.** Every confirmed finding becomes an issue (or a private report, for security). Ten real problems mean ten issues.
 - **No duplicates.** Search open and closed issues first. An open match gets the new evidence as a comment; a closed one that came back gets a new issue that links it and says it regressed.
 - **Where.** Every issue goes to `kairos-io/kairos`, the central tracker, naming the repo in the body. Hadron findings also get `area/hadron`.
 - **Labels.** As many existing labels as fit: one kind (`bug` or `enhancement`) plus every matching area and topic label. Never create a label.

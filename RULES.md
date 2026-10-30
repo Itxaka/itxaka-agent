@@ -625,7 +625,7 @@ A separate track looks for problems nobody has filed yet: bugs, shortcomings and
 
 - **Proof, not hunches.** A finding is filed only with a reproduction (command output, a failing test, a QEMU run), or with exact code or docs references that contradict each other on their own. A second hunter, with a fresh context and nothing but the finding, must re-derive and confirm it before it is filed. Repo code runs only in containers or QEMU, never on the host.
 - **Security goes private.** Anything an attacker could use is reported through the repo's private vulnerability reporting (GitHub Security Advisory), as SECURITY.md asks, never as a public issue, comment, commit or PR. When in doubt, private.
-- **No cap.** Every confirmed finding becomes an issue (or a private report, for security). Ten real problems mean ten issues.
+- **Two per batch, at most.** A batch files no more than 2 new issues or private reports in total. Every confirmed finding still gets filed, but the extras wait in `workspace/.state/hunt-pending.json` with their full bodies and go out in later batches, oldest first. When the queue already holds 2 or more, the batch files from it and does not hunt new ground. Evidence comments on existing issues don't count toward the 2.
 - **No duplicates.** Search open and closed issues first. An open match gets the new evidence as a comment; a closed one that came back gets a new issue that links it and says it regressed.
 - **Where.** Every issue goes to `kairos-io/kairos`, the central tracker, naming the repo in the body. Hadron findings also get `area/hadron`.
 - **Labels.** As many existing labels as fit: one kind (`bug` or `enhancement`) plus every matching area and topic label. Never create a label.

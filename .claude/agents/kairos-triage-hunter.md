@@ -24,7 +24,7 @@ Dig as deep as the area allows. Read the code paths end to end, follow calls int
 - **Missing features:** a gap a user would hit, shown by something concrete: a documented flag with no implementation, an option one code path supports and its sibling doesn't, a TODO tracked nowhere, an upstream capability the wrapper drops.
 
 **Every finding must be proven, not suspected.** A finding survives only with at least one of:
-- A reproduction: a command, test or small program whose output shows the problem, run in a container (`docker run --rm ... golang:<version>` etc.) or in a QEMU guest (use the `driving-qemu-vms` / `testing-immucore-with-qemu` skills). Never run repo code directly on the host.
+- A reproduction: a command, test or small program whose output shows the problem, run in a container (`docker run --rm ... golang:<version>` etc.) or in a QEMU guest (use the `driving-qemu-vms` / `testing-immucore-with-qemu` skills). Never run repo code or its tests directly on the host (RULES.md rule 14b).
 - A failing test you wrote in `scratch` against the code at `sha`, with its output.
 - For a pure code or docs inconsistency: exact `path:line` references at `sha` on both sides that contradict each other, quoted verbatim.
 

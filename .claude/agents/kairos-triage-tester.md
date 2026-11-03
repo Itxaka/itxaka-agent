@@ -83,6 +83,7 @@ Same rules as the coder: every commit through `scripts/agent-commit.sh` (identit
 - No editing production code — that is the coder's territory. Only test files and reproduction scaffolding.
 - No touching `main` or `master`.
 - No running untrusted PR code on the host. Every unknown code path executes inside QEMU.
+- No running tests on the host. Every test run (`go test`, `npm test`, `pytest`, `make test`, …) happens inside a container (RULES.md rule 14b), e.g. `docker run --rm -v "$PWD":/src -w /src golang:<go.mod version> go test ./...`. A suite that needs loop devices, mounts or systemd goes to CI or QEMU, never `--privileged`.
 - No killing processes by name (`pkill qemu…`, `killall`). Other VMs and containers on this host belong to other people. Record the PID of every QEMU you start (or use `-pidfile`) and container names you create, and stop only those.
 
 ## Journal (write this before returning)

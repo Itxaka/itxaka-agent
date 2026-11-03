@@ -513,6 +513,12 @@ Requirements:
 
 CI-only runs (no local invocation) do not need a screenshot; the CI check itself is the artifact. This rule applies specifically to test suites the agent kicked off locally.
 
+## 14b. Tests run in a container, never on the host
+
+Every test run the agent starts — `go test`, `npm test`, `pytest`, `cargo test`, `make test`, envtest, a hunter's reproduction — runs inside a container, not on this host. Mount the worktree into the repo's own build/test image if it has one, else the matching toolchain image, e.g. `docker run --rm -v "$PWD":/src -w /src golang:<version from go.mod> go test ./...`. Give each container a name you own and remove it afterwards. `go build`, `go vet`, `go mod tidy` and linters may run on the host, or in a container.
+
+Kairos test suites run installer, partitioner and yip code against the machine they run on. On 2026-11-03 a host `go test ./...` in kairos called `systemctl daemon-reload` twice and popped polkit prompts on Itxaka's desktop. A suite that needs privileges the container lacks (loop devices, mounts, systemd) is left to CI or run in QEMU; never add `--privileged` to get around it. The rule 14a screenshot shows the `docker run` line with the test command.
+
 ## 15. Bug-fix workflow: test first, fix, flip
 
 Fixes for reported bugs follow a fixed three-phase workflow, one commit per phase, in this order:

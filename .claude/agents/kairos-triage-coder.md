@@ -23,7 +23,7 @@ Read the envelope. Everything you need about the ticket is in there.
 
 For a bug ticket, follow rule 15's three-phase workflow:
 
-1. **Phase 2 — Fix.** The tester (phase 1) has already committed a test that captures the wrong behavior described in the ticket. Confirm that test currently PASSES (bug reproduces). Edit the production code to change the behavior. Run the suite. The tester's phase-1 test now FAILS. Commit as `fix: <short summary>`. If a suite command is not obvious from the repo layout, look for `Makefile`, `go test`, `pytest`, and honor whatever the repo uses.
+1. **Phase 2 — Fix.** The tester (phase 1) has already committed a test that captures the wrong behavior described in the ticket. Confirm that test currently PASSES (bug reproduces). Edit the production code to change the behavior. Run the suite. The tester's phase-1 test now FAILS. Commit as `fix: <short summary>`. If a suite command is not obvious from the repo layout, look for `Makefile`, `go test`, `pytest`, and honor whatever the repo uses. Run the suite inside a container, never on the host (RULES.md rule 14b): `docker run --rm -v "$PWD":/src -w /src golang:<go.mod version> go test ./...` or the repo's own test image.
 
 2. **Phase 3 — Flip.** Edit the tester's phase-1 test in place so it now asserts the correct behavior. Run the suite. It passes. Commit as `test: guard against <ticket ref> regression`.
 

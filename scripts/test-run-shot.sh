@@ -7,7 +7,8 @@
 # Usage: scripts/test-run-shot.sh <worktree> <out.png> -- docker run ... <test cmd>
 #
 # Writes <out.png> and the full log next to it (<out>.log). The PNG shows the
-# last $SHOT_LINES lines (default 40) of the test output. Exits with the test
+# last $SHOT_LINES lines (default 40) of the test output, without `go: downloading`
+# noise, and with the worktree path shown as <worktree> and $HOME as ~. Exits with the test
 # command's exit code, so a base-fails run still produces its image.
 set -uo pipefail
 
@@ -26,6 +27,7 @@ font=${SHOT_FONT:-Adwaita-Mono}
 magick -list font | grep -x "  Font: $font" >/dev/null || { echo "$0: font '$font' not installed (see 'magick -list font')" >&2; exit 2; }
 
 log=${out%.png}.log
+wt_abs=$(cd "$wt" && pwd)
 lines=${SHOT_LINES:-40}
 cmdline="$*"
 
@@ -54,7 +56,8 @@ trap 'rm -f "$shot"' EXIT
     echo "... ($(( total - lines )) earlier lines in $(basename "$log"))"
   fi
   tail -n +"$(( head_lines + 1 ))" "$log" | tail -n "$lines"
-} | expand -t 8 | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$shot"
+} | grep -v '^go: downloading ' | expand -t 8 \
+  | sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e "s#$wt_abs#<worktree>#g" -e "s#$HOME#~#g" > "$shot"
 
 magick -background '#111111' -fill '#dddddd' -font "$font" -pointsize 15 \
   label:@- -bordercolor '#111111' -border 16 "$out" < "$shot" \

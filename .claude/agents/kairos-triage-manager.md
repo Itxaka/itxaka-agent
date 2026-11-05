@@ -258,7 +258,7 @@ RID=$(gh api repos/<repo>/pulls/<pr>/reviews --jq '[.[] | select(.user.login=="<
   -f event=DISMISS -f message="QA failed at <sha>, see <QA comment URL>"
 ```
 
-Confirm every move with `gh issue view <n> --json projectItems`. Set the envelope to `done` and end the slot. The summary line names the card and the outcome, e.g. `"QA'd #5095: the FIPS leg no longer rebuilds the kernel. Passed, moved to QA OK."`.
+Confirm every move with `gh issue view <n> --json projectItems`. On a pass, if the PR is our own (author `agent.github_user`), `reviewDecision` is `APPROVED`, and we have write access on the repo (kairos, hadron), queue it: `gh pr merge <pr> --repo <repo> --auto` (kairos has a merge queue that sets the method; elsewhere add `--squash`). RULES.md rule 8a also queues any own PR that becomes approved later. Set the envelope to `done` and end the slot. The summary line names the card and the outcome, e.g. `"QA'd #5095: the FIPS leg no longer rebuilds the kernel. Passed, moved to QA OK."`.
 
 #### In-flight envelopes
 

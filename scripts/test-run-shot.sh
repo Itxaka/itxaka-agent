@@ -4,7 +4,8 @@
 # and `date -Iseconds`, then the exact `docker run ...` line and its output.
 # Nothing is typed in by hand: the PNG shows only what the commands printed.
 #
-# Usage: scripts/test-run-shot.sh <worktree> <out.png> -- docker run ... <test cmd>
+# Usage: [SHOT_EXPECT_SHA=<sha>] scripts/test-run-shot.sh <worktree> <out.png> -- docker run ... <test cmd>
+# <worktree> must be a checkout of the code under test, never this repo.
 #
 # Writes <out.png> and the full log next to it (<out>.log). The PNG shows the
 # last $SHOT_LINES lines (default 40) of the test output, without `go: downloading`
@@ -22,6 +23,13 @@ shift
 [ "$1" = "docker" ] && [ "${2:-}" = "run" ] || { echo "$0: the test command must be a 'docker run ...' (rule 14b)" >&2; exit 2; }
 [ -d "$wt" ] || { echo "$0: no such worktree: $wt" >&2; exit 2; }
 case "$out" in *.png) ;; *) echo "$0: output must end in .png" >&2; exit 2;; esac
+self_top=$(cd "$(dirname "$0")/.." && pwd)
+wt_top=$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null) || { echo "$0: $wt is not a git checkout" >&2; exit 2; }
+[ "$wt_top" != "$self_top" ] || { echo "$0: $wt is the triage-agent repo itself; pass the worktree of the code under test" >&2; exit 2; }
+if [ -n "${SHOT_EXPECT_SHA:-}" ]; then
+  got=$(git -C "$wt" rev-parse HEAD)
+  case "$got" in "$SHOT_EXPECT_SHA"*) ;; *) echo "$0: $wt is at $got, expected $SHOT_EXPECT_SHA" >&2; exit 2;; esac
+fi
 
 font=${SHOT_FONT:-Adwaita-Mono}
 magick -list font | grep -x "  Font: $font" >/dev/null || { echo "$0: font '$font' not installed (see 'magick -list font')" >&2; exit 2; }

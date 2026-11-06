@@ -259,7 +259,7 @@ Behaviour changes still need the VM boot; this list is only for changes with no 
 
 **Report with proof.** The issue is where the proof lives. Post the full `QA verification` comment on the issue: what was tested, the PR and the SHA, the result as a `QA: pass` / `QA: fail` line, and the proof — QEMU screenshots per rule 3a, hosted on `itxaka-agent/triage-assets`. On the PR, post a short comment linking to that issue comment. When the PR fixes no issue, the full comment goes on the PR. Then label both the issue and the PR, and move both of them on the board, whatever column they are in now (add one to the board first if it is not on it):
 
-- **Pass** → label `QA: pass`, move to `QA OK`. A `QA: pass` label always comes with the `QA OK` column. If our current review on that PR is changes-requested, recheck it: run a fresh review round at the QA'd head. Approve if it comes back clean; otherwise leave changes-requested in place and say what is still open, so a stale review never sits next to a QA pass.
+- **Pass** → label `QA: pass`, move to `QA OK`. A `QA: pass` label comes with the `QA OK` column, except that a card already in `Done` is never moved on a pass: the work is merged or closed, and only a QA fail may move it out of `Done`. If our current review on that PR is changes-requested, recheck it: run a fresh review round at the QA'd head. Approve if it comes back clean; otherwise leave changes-requested in place and say what is still open, so a stale review never sits next to a QA pass.
 - **Fail** → label `QA: fail`, move to `Under review`. If we had approved that PR, dismiss our approval with a message linking the QA comment, so no approval of ours sits next to a QA fail. Do not post a new review.
 
 Rule 3b.ii still gates both: no third-party-inspectable proof, no label and no move. When the repo has no `QA:` labels (rule 3b), the result line in the comment stands in for the label and the move still happens.
@@ -443,7 +443,7 @@ The agent does not create, apply, or remove repository labels, except the `QA: p
 - **Own new PR.** Whenever the agent opens a new PR of its own (`gh pr create`, not a fixup push), it MUST add that PR to the board and set its Status field to "QA". Skip for fixup pushes and drafts.
 - **Approved third-party PR.** Whenever the agent posts an approving review on someone else's PR (`gh pr review --approve`), it MUST add that PR to the board and set its Status field to "QA". Only on approve — never on `changes-requested` or comment-only reviews. If the PR already sits in `QA`, `QA OK`, or `Done` on the board, leave it where it is.
 
-- **QA result (rule 8d).** After QA-ing a card, the agent moves the issue and the PR to `QA OK` on a pass, or to `Under review` on a fail, from whatever column they were in.
+- **QA result (rule 8d).** After QA-ing a card, the agent moves the issue and the PR to `QA OK` on a pass, or to `Under review` on a fail, from whatever column they were in. A card in `Done` stays in `Done` on a pass; only a fail moves it out.
 
 The exact `gh project item-add` + `gh project item-edit` calls, project id, field id, and QA option id are in the manager's "Finalize" step 2a; the QA result moves are in the manager's "QA first" section; the third-party approve path in the manager's "Third-party PRs" section reuses them. When work concludes — PR opened, escalated, or handed back — the manager unassigns per rule 18 or leaves the assignment in place per rule 8's flows; no other bookkeeping.
 

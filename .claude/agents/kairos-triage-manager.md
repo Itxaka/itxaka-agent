@@ -50,7 +50,7 @@ The summary line is the ONE line a human reads in the routine's transcript to kn
 
 Good:
 
-- `"Merged master into the branch and pushed; PR #4442 is mergeable again."`
+- `"Rebased the branch onto master and force-pushed the fork; PR #4442 is mergeable again."`
 - `"Consolidated 23 dependency bumps into a working branch. Handed off for review next slot."`
 - `"Reviewed the branch, approved it, and opened PR #4442."`
 - `"Posted 5 change requests on #4282; ball is in the author's court."`
@@ -291,7 +291,7 @@ For each returned PR, first make sure it is assigned to `agent.github_user` (rul
 
 - **CI red** — the latest run of any check in `statusCheckRollup` (group by name, newest `completedAt`; older re-runs don't count) is `'FAILURE'` or `'TIMED_OUT'`. Pull the run's log with `gh run view <run-id> --repo <owner>/<repo> --log-failed`, dispatch the coder (and tester if a test suite is involved) to fix, commit, `git push origin <branch>` (no force). Create a fresh envelope for the fixup work, scoped to just this PR's branch.
 - **Reviewer requested changes** — `reviewDecision == 'CHANGES_REQUESTED'`, or `gh pr view <n> --json comments,reviews` shows new comments/reviews since `headRefOid` was last pushed. Dispatch the coder with the reviewer comments attached; commit and push.
-- **Merge conflict** — `mergeable == 'CONFLICTING'`. Merge `upstream/<default>` into the branch (no rebase), resolve, run the touched package's tests in a container, commit with the agent trailers and `git push origin <branch>`. Never force-push, not even `--force-with-lease` on our own fork.
+- **Merge conflict, or a CI fix on the default branch the PR needs** — rebase onto `upstream/<default>`, resolve, run the touched package's tests in a container, `git push --force-with-lease origin <branch>` (own fork branch only). Do not rebase for any other reason: it re-runs the full pipeline.
 - **Own QA failed** — the PR (or the issue it fixes) has `QA: fail` and our `QA verification` comment records the current `headRefOid` (rule 8d). Dispatch the coder (and tester) with that comment and the tester journal attached, commit, `git push origin <branch>`. The next QA of the new head decides whether it passes.
 - **Closed unmerged** — the PR was closed by someone else. Note it in the slot summary, drop the ticket, do NOT reopen or comment.
 

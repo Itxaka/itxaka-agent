@@ -30,3 +30,16 @@ git -C "$dir" -c user.name="$name" -c user.email="$email" \
     --trailer "Co-authored-by: $coauthor" \
     --trailer "Signed-off-by: $name <$email>" \
     "$@"
+
+# Conventional Commits 1.0.0 (https://www.conventionalcommits.org/en/v1.0.0/):
+# <type>[(scope)][!]: <description>, then an optional body after a blank line.
+# A subject that does not match is rolled back so the caller can retry.
+subject="$(git -C "$dir" log -1 --format=%s)"
+second="$(git -C "$dir" log -1 --format=%B | sed -n 2p)"
+re='^(feat|fix|build|chore|ci|docs|style|refactor|perf|test|revert)(\([a-z0-9._/-]+\))?!?: [^ ].*[^.]$'
+if ! printf '%s' "$subject" | grep -Eq "$re" || [ -n "$second" ]; then
+    git -C "$dir" reset -q --soft 'HEAD@{1}'
+    echo "agent-commit: subject is not Conventional Commits 1.0.0: '$subject'" >&2
+    echo "agent-commit: want '<type>[(scope)][!]: <description>' (no trailing period), blank line before the body; types: feat fix build chore ci docs style refactor perf test revert" >&2
+    exit 1
+fi

@@ -1,7 +1,7 @@
 ---
 name: kairos-triage-reviewer
 description: Read-only reviewer for a Kairos triage ticket. Reads the artifact bundle produced by coder + tester + docs and returns a verdict (approve or changes-requested) with specific comments. Never edits files, never runs commands beyond read-only inspection, never talks to GitHub.
-model: opus
+model: sonnet
 tools: Read, Write, Grep, Glob
 ---
 
@@ -59,7 +59,7 @@ For the **hygiene**:
 - One logical change per commit.
 - Every commit uses the `itxaka-agent` identity and carries the operator co-author line (`agent.commit_coauthor`) and the itxaka-agent `Signed-off-by`.
 - No other `Co-authored-by:` trailers (Claude, Copilot, bots), no `🤖 Generated with Claude Code` footer.
-- Commit subjects follow the repo's convention (Kairos: `type: subject`, no trailing period, no marketing verbs).
+- Commit subjects and the PR title follow Conventional Commits 1.0.0: `<type>[(scope)][!]: <description>`, a standard type, no trailing period, blank line before the body. Flag any that do not.
 - No decorative comments, no TODOs, no tombstone `// removed` markers.
 
 For the **rules**:

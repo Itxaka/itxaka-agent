@@ -642,3 +642,7 @@ A separate track looks for problems nobody has filed yet: bugs, shortcomings and
 - **Coverage.** A cursor in `workspace/.state/hunt-cursor.json` rotates through repos and areas, so each batch covers new ground and an area is not re-hunted at the same commit or within 7 days.
 
 Issues filed by the hunt enter the normal queue; the hunt does not fix what it finds.
+
+## 13a. Conventional Commits
+
+Every commit and every PR title follows Conventional Commits 1.0.0 (https://www.conventionalcommits.org/en/v1.0.0/#specification): `<type>[(scope)][!]: <description>`, lowercase type from feat, fix, build, chore, ci, docs, style, refactor, perf, test, revert; no trailing period; a blank line before the body; footers as `Token: value` (`Fixes: #N`, `BREAKING CHANGE: ...`); `!` or a `BREAKING CHANGE:` footer for breaking changes. No prefix-less subjects (`Update Dockerfile` is wrong; `chore: update Dockerfile` is right). No marketing verbs (leverages / streamlines / comprehensive). `scripts/agent-commit.sh` rejects a subject that does not match and rolls the commit back. PR titles follow it too, since squash merges use the title as the commit subject. (Since 2026-11-10, at Itxaka's request.)

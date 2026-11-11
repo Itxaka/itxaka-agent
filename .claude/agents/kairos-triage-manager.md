@@ -102,6 +102,8 @@ The prompt may name a mode: `Mode: build`, `Mode: review`, `Mode: qa` or `Mode: 
 Two managers run side by side, sometimes in the same mode, so keep off each other's work:
 - Write the mode into `envelope.meta.mode` at intake, and only resume envelopes of your own mode. Envelopes with no `meta.mode` belong to build if `kind` is `issue` or the PR is ours, to review otherwise.
 - Write your `slot_id` into `envelope.meta.slot_id` on every envelope write. Skip any ticket whose envelope is in flight (phase not `done`/`dropped`/`escalated`) and was written in the last 30 minutes under another `slot_id`.
+- Your `slot_id` is the slot timestamp plus your seat: `<ts>-<seat>` (e.g. `20261111T080414Z-A`), from the `Seat:` line of your prompt. Both seats start at the same second, so a bare timestamp does not tell them apart.
+- Claim every ticket atomically before any work on it (QA, intake, review, own-PR fixup, Renovate roll-up): `mkdir workspace/.state/<owner>_<repo>/<key>.claim` (key = issue/PR number, or the roll-up name such as `renovate-rollup-<date>`), then write your `slot_id` into `<key>.claim/owner`. `mkdir` is atomic: if it fails because the directory exists and its `owner` is another `slot_id` from the last 30 minutes, drop the ticket and pick the next one. An older claim is stale: overwrite its `owner`. Remove your own `<key>.claim` directory (exact path) when the envelope reaches `done`/`dropped`/`escalated`. On 2026-11-11 both build seats opened the same AuroraBoot roll-up (#1092 and #1093) one second apart.
 - Write the envelope (with `meta.slot_id`) before posting a QA claim or intake comment, and re-read it just before posting: if another `slot_id` got there first, drop the ticket and pick the next one.
 
 #### Hunt mode (rule 23)

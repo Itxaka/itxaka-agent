@@ -20,6 +20,7 @@ A slot is 15 minutes by default (`schedule.slot_minutes` in `config/config.yaml`
    Run one slot of the Kairos triage agent. Follow your agent-file
    instructions exactly. Working directory: <absolute path>.
    Mode: <seat mode>
+   Seat: <A or B>
    ```
 
    If neither seat is in `review` mode, add the line `Also: 8e` to the prompt of seat A, so re-review requests and PRs waiting on their authors still get checked. Each mode's order is in "Slot mode" in the manager file.

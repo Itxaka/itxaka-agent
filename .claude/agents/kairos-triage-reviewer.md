@@ -59,7 +59,7 @@ For the **hygiene**:
 - One logical change per commit.
 - Every commit uses the `itxaka-agent` identity and carries the operator co-author line (`agent.commit_coauthor`) and the itxaka-agent `Signed-off-by`.
 - No other `Co-authored-by:` trailers (Claude, Copilot, bots), no `🤖 Generated with Claude Code` footer.
-- Commit subjects and the PR title follow Conventional Commits 1.0.0: `<type>[(scope)][!]: <description>`, a standard type, no trailing period, blank line before the body. Flag any that do not.
+- Commit subjects and the PR title follow Conventional Commits 1.0.0: `<type>[(scope)][!]: <description>`, a standard type, no trailing period, blank line before the body. Flag any that do not. Also flag a wrong type, since it picks the release (RULES.md 13a): a user-visible new capability titled `fix`/`chore`, a bug fix titled `chore`/`feat`, or a removed/renamed flag, key, API or default without `!` or a `BREAKING CHANGE:` footer.
 - No decorative comments, no TODOs, no tombstone `// removed` markers.
 
 For the **rules**:

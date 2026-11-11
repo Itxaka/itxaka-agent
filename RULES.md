@@ -646,3 +646,20 @@ Issues filed by the hunt enter the normal queue; the hunt does not fix what it f
 ## 13a. Conventional Commits
 
 Every commit and every PR title follows Conventional Commits 1.0.0 (https://www.conventionalcommits.org/en/v1.0.0/#specification): `<type>[(scope)][!]: <description>`, lowercase type from feat, fix, build, chore, ci, docs, style, refactor, perf, test, revert; no trailing period; a blank line before the body; footers as `Token: value` (`Fixes: #N`, `BREAKING CHANGE: ...`); `!` or a `BREAKING CHANGE:` footer for breaking changes. No prefix-less subjects (`Update Dockerfile` is wrong; `chore: update Dockerfile` is right). No marketing verbs (leverages / streamlines / comprehensive). `scripts/agent-commit.sh` rejects a subject that does not match and rolls the commit back. PR titles follow it too, since squash merges use the title as the commit subject. (Since 2026-11-10, at Itxaka's request.)
+
+**The type picks the next version.** kairos and hadron cut releases from these commits, so the type is a version decision, not a label. From the spec (rules 2, 3, 11–14, 16 and the "How does this relate to SemVer?" FAQ):
+
+- `fix` is a bug fix: a **PATCH** release.
+- `feat` is a new feature: a **MINOR** release.
+- A breaking change is a **MAJOR** release, whatever the type: `!` right before the colon (`feat(agent)!: drop --legacy`, `fix!: ...`), or a footer `BREAKING CHANGE: <what breaks>` (`BREAKING-CHANGE:` is the same; the token is uppercase). With `!` the footer is optional and the description says what breaks.
+- `build`, `chore`, `ci`, `docs`, `style`, `refactor`, `perf`, `test` have no SemVer effect of their own in the spec. Our release script (`semver-bump.sh` in kairos and hadron) counts them as PATCH so a release still moves.
+- The spec has no 0.x exception: "proceed as if you've already released the product". A breaking change on a 0.x repo is still MAJOR.
+
+Pick the type by what the change does for a user of the shipped thing:
+- Something stops being wrong (bug, crash, wrong output, CVE fix through a dependency bump) → `fix`. A dependency bump done for a fix is `fix(deps)`; a routine bump is `chore(deps)`.
+- Something new a user can use (flag, config key, command, package shipped in the image, supported platform) → `feat`.
+- A user has to change something to keep working (removed or renamed flag/key/API, changed default, dropped platform, changed on-disk layout) → add `!` and a `BREAKING CHANGE:` footer saying what to change. Never hide a break behind `fix` or `chore`.
+- Only CI, tests, docs, build plumbing or internal cleanup → the matching non-release type.
+- One commit, one type. A change that is both a fix and a feature is two commits.
+- A wrong type caught before merge gets fixed (reword the commit, edit the PR title). The PR title is what lands, since we squash.
+

@@ -98,4 +98,4 @@ Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/j
 - Do NOT touch `phase` — the manager owns it.
 
 Return a short paragraph: what you tested, what you saw (pass/fail counts, boot outcome), where the artifacts live.
-- Scratch space (RULES.md rule 14c): work in `workspace/.scratch/<owner>-<n>-<slot_id>/` (check `df -h /tmp workspace` first; use `/tmp` only with 10 GB or more free). Remove everything you created there, plus worktrees and containers, before you return, also on failure.
+- Scratch space (RULES.md rule 14c): never use `/tmp`. Work in `workspace/.scratch/<owner>-<n>-<slot_id>/` (check `df -h workspace` first; stop if under 50 GB free). Remove everything you created there, plus worktrees and containers, before you return, also on failure.

@@ -89,4 +89,4 @@ The manager sets a wall-clock cap on your invocation (default 15 minutes). If th
 ## Return contract
 
 Your final message is one line: the same `verdict: ...` and `one-line: ...` you wrote into the journal, plus the absolute path to the journal file. The manager threads the one-liner into the review body when the verdict is `confirmed`, drops the finding when it is `contradicted`, and asks for more context when it is `inconclusive`.
-- Scratch space (RULES.md rule 14c): work in `workspace/.scratch/<owner>-<n>-<slot_id>/` (check `df -h /tmp workspace` first; use `/tmp` only with 10 GB or more free). Remove everything you created there, plus worktrees and containers, before you return, also on failure.
+- Scratch space (RULES.md rule 14c): never use `/tmp`. Work in `workspace/.scratch/<owner>-<n>-<slot_id>/` (check `df -h workspace` first; stop if under 50 GB free). Remove everything you created there, plus worktrees and containers, before you return, also on failure.

@@ -48,7 +48,7 @@ The hunt (rule 23) runs beside the seats on its own 30-minute cadence; see the `
 
 ## Daily disk check
 
-On the first slot of each working day, before spawning the seats, run `docker system df`. When the build cache is over 400 GB and no build is running (`docker ps` shows no buildx/buildkit job in progress and no worker holds a scratch dir under `workspace/.scratch/`), prune it: `docker buildx prune -af` and remove idle `buildx_buildkit_*` builders. If a build is running or someone asked to keep the cache, skip it and say so in the slot summary. Also glance at `df -h /tmp workspace` (RULES.md rule 14c).
+On the first slot of each working day, before spawning the seats, run `docker system df`. When the build cache is over 400 GB and no build is running (`docker ps` shows no buildx/buildkit job in progress and no worker holds a scratch dir under `workspace/.scratch/`), prune it: `docker buildx prune -af` and remove idle `buildx_buildkit_*` builders. If a build is running or someone asked to keep the cache, skip it and say so in the slot summary. Also check `df -h workspace` (RULES.md rule 14c).
 
 ## What this skill does NOT do
 

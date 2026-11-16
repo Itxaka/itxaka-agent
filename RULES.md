@@ -525,9 +525,16 @@ Every test run the agent starts — `go test`, `npm test`, `pytest`, `cargo test
 
 Kairos test suites run installer, partitioner and yip code against the machine they run on. On 2026-11-03 a host `go test ./...` in kairos called `systemctl daemon-reload` twice and popped polkit prompts on Itxaka's desktop. A suite that needs privileges the container lacks (loop devices, mounts, systemd) is left to CI or run in QEMU; never add `--privileged` to get around it. The rule 14a screenshot shows the `docker run` line with the test command.
 
-## 14c. Workers clean up /tmp after themselves
+## 14c. Scratch space: pick the disk by free space, clean up after yourself
 
-`/tmp` is a tmpfs here. Whatever a worker leaves there eats RAM and, once it fills, breaks every later slot (on 2026-11-16 a Hadron kernel cache rebuild filled it and killed the run). Every worker that writes to `/tmp` (coder, tester, hunter, builder, docs, reviewer, and the manager when it does so itself) removes what it created before it returns: scratch dirs, worktrees (`git worktree remove --force` then `git worktree prune`), build output, downloaded ISOs and images, QEMU disks, and the container leftovers from rule 14b (`docker rm -f`, `docker volume rm`, `docker builder prune -f` and `docker image prune -f` for what the run built). Use one directory per task, `mktemp -d /tmp/triage-<owner>-<n>.XXXX`, and `rm -rf` it at the end, also on failure paths. Never delete paths you did not create. The manager checks `df -h /tmp` after each worker returns; above 80% it cleans up the worker's leftovers before dispatching the next one, and says so in the slot summary. Large caches that must outlive a slot go under the workspace directory, not `/tmp`.
+`/tmp` is a tmpfs here, so it is RAM-backed and can be small. On 2026-11-16 a Hadron kernel cache rebuild filled it and killed the run. Every task that needs scratch space (build output, downloaded ISOs and images, QEMU disks, logs, probe runs) works under one directory per task and removes it before the worker returns, also on failure paths.
+
+1. Check free space first: `df -h /tmp workspace`.
+2. Use `workspace/.scratch/<owner>-<n>-<slot_id>/` by default. It lives on the main disk (ignored by git, like `workspace/.state`) and is created with `mkdir -p`.
+3. Use `/tmp` only for small, short-lived files, and only when it has at least 10 GB free. With less than 10 GB free, do not use `/tmp` at all; say in the slot summary that `/tmp` is too small and suggest enlarging it (a larger `size=` for the tmpfs mount, or moving the work to disk).
+4. If the workspace disk has less than 50 GB free, do not start big builds; report it in the slot summary instead.
+
+Cleanup, by each worker (coder, tester, hunter, builder, docs, reviewer) and by the manager for its own work: `rm -rf` the task's scratch dir, `git worktree remove --force` then `git worktree prune` for task worktrees, and the rule 14b container leftovers (`docker rm -f`, `docker volume rm`, and `docker builder prune -f` / `docker image prune -f` only for what the run built). Never delete paths you did not create. After each worker returns, the manager checks that the worker's scratch dir is gone, removes it if not, and reports `df -h /tmp workspace` in the slot summary when either is above 80% used. Docker build cache is pruned once a day, see the daily check in the skill, not by workers.
 
 ## 15. Bug-fix workflow: test first, fix, flip
 

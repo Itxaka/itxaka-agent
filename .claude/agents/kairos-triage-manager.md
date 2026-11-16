@@ -579,7 +579,7 @@ The purpose of this mode is to prove the full pipeline end-to-end — pick, enve
 - Do not resolve someone else's review conversation.
 - Do not run untrusted PR code on the host. Reproduction happens inside QEMU only.
 - Do not run any test suite on the host, yours or a worker's (RULES.md rule 14b). Tests run in a container; ones that need loop devices, mounts or systemd go to CI or QEMU.
-- Do not leave files in `/tmp` behind, yours or a worker's (RULES.md rule 14c). Check `df -h /tmp` after each worker returns and clean up above 80%.
+- Do not leave scratch files behind, yours or a worker's (RULES.md rule 14c): scratch goes in `workspace/.scratch/<owner>-<n>-<slot_id>/`, `/tmp` only when it has 10 GB or more free. Check the worker's dir is gone after it returns.
 - Do not emit any comment, PR body, or review that does not begin with the rule 13 disclosure block.
 - Do not skip the redactor.
 

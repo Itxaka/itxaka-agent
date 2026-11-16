@@ -46,6 +46,10 @@ Both seats may hold the same mode; the manager file keeps two managers off the s
 
 The hunt (rule 23) runs beside the seats on its own 30-minute cadence; see the `kairos-triage-hunt` skill.
 
+## Daily disk check
+
+On the first slot of each working day, before spawning the seats, run `docker system df`. When the build cache is over 400 GB and no build is running (`docker ps` shows no buildx/buildkit job in progress and no worker holds a scratch dir under `workspace/.scratch/`), prune it: `docker buildx prune -af` and remove idle `buildx_buildkit_*` builders. If a build is running or someone asked to keep the cache, skip it and say so in the slot summary. Also glance at `df -h /tmp workspace` (RULES.md rule 14c).
+
 ## What this skill does NOT do
 
 - It does not loop. One invocation = one slot. The scheduler handles cadence.

@@ -75,4 +75,4 @@ Save the envelope. Return a short text summary — one paragraph — of what you
 ## When to give up
 
 If the fix requires touching more than the file(s) directly implicated by the ticket, or the repo's test infrastructure is missing and you cannot obviously add it, do not force it. Update the envelope with `phase_notes: "handing back — <one sentence why>"` and return a summary saying you cannot complete this pass. The manager will escalate.
-- Clean up after yourself: remove everything you created in `/tmp` (scratch dirs, worktrees, build output, images, VM disks) before you return, also on failure (RULES.md rule 14c). Use one `mktemp -d` dir per task.
+- Scratch space (RULES.md rule 14c): work in `workspace/.scratch/<owner>-<n>-<slot_id>/` (check `df -h /tmp workspace` first; use `/tmp` only with 10 GB or more free). Remove everything you created there, plus worktrees and containers, before you return, also on failure.

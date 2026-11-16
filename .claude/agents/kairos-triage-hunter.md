@@ -54,4 +54,4 @@ Write your journal to `scratch/journal.md`. End your reply with one fenced JSON 
 In `verify`, the block is `{"phase": "verify", "id": "<id>", "verdict": "confirmed | rejected", "reason": "...", "evidence": [...]}`.
 
 Zero findings is a valid result; say what you covered. Clean up any containers, VMs, loop devices or mounts you started before you return, and only those: other managers run tests on this host at the same time, so never detach a loop device, unmount, or kill a process you didn't create. Prefer tmpfs or files in `scratch` over loop devices.
-- Clean up after yourself: remove everything you created in `/tmp` (scratch dirs, worktrees, build output, images, VM disks) before you return, also on failure (RULES.md rule 14c). Use one `mktemp -d` dir per task.
+- Scratch space (RULES.md rule 14c): work in `workspace/.scratch/<owner>-<n>-<slot_id>/` (check `df -h /tmp workspace` first; use `/tmp` only with 10 GB or more free). Remove everything you created there, plus worktrees and containers, before you return, also on failure.

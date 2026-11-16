@@ -525,6 +525,10 @@ Every test run the agent starts — `go test`, `npm test`, `pytest`, `cargo test
 
 Kairos test suites run installer, partitioner and yip code against the machine they run on. On 2026-11-03 a host `go test ./...` in kairos called `systemctl daemon-reload` twice and popped polkit prompts on Itxaka's desktop. A suite that needs privileges the container lacks (loop devices, mounts, systemd) is left to CI or run in QEMU; never add `--privileged` to get around it. The rule 14a screenshot shows the `docker run` line with the test command.
 
+## 14c. Workers clean up /tmp after themselves
+
+`/tmp` is a tmpfs here. Whatever a worker leaves there eats RAM and, once it fills, breaks every later slot (on 2026-11-16 a Hadron kernel cache rebuild filled it and killed the run). Every worker that writes to `/tmp` (coder, tester, hunter, builder, docs, reviewer, and the manager when it does so itself) removes what it created before it returns: scratch dirs, worktrees (`git worktree remove --force` then `git worktree prune`), build output, downloaded ISOs and images, QEMU disks, and the container leftovers from rule 14b (`docker rm -f`, `docker volume rm`, `docker builder prune -f` and `docker image prune -f` for what the run built). Use one directory per task, `mktemp -d /tmp/triage-<owner>-<n>.XXXX`, and `rm -rf` it at the end, also on failure paths. Never delete paths you did not create. The manager checks `df -h /tmp` after each worker returns; above 80% it cleans up the worker's leftovers before dispatching the next one, and says so in the slot summary. Large caches that must outlive a slot go under the workspace directory, not `/tmp`.
+
 ## 15. Bug-fix workflow: test first, fix, flip
 
 Fixes for reported bugs follow a fixed three-phase workflow, one commit per phase, in this order:

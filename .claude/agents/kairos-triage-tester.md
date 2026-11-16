@@ -98,3 +98,4 @@ Before returning, write a role journal to `workspace/.state/<owner>_<repo>/<n>/j
 - Do NOT touch `phase` — the manager owns it.
 
 Return a short paragraph: what you tested, what you saw (pass/fail counts, boot outcome), where the artifacts live.
+- Clean up after yourself: remove everything you created in `/tmp` (scratch dirs, worktrees, build output, images, VM disks) before you return, also on failure (RULES.md rule 14c). Use one `mktemp -d` dir per task.

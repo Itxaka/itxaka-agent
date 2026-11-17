@@ -140,6 +140,10 @@ An issue claimed by someone (a human assignee, a comment saying they are taking 
 
 The agent's own "still on this?" comment does not reset the count. An issue with a linked open PR is taken however old it is; this rule is about issues, not other people's PRs. A linked PR includes one in another repository: an open PR anywhere that references the issue (`Fixes`, `Closes` or `Part of <owner>/<repo>#<n>`, or the full issue URL) holds it, because GitHub's own link lookup only sees same-repo PRs.
 
+## 5b. Paused repositories
+
+A repository with `paused: true` in `config/config.yaml` gets no work at all: no review, no re-review (rule 8e), no QA card, no own-PR fixup or rebase, no CI pings, no intake, no Renovate roll-up, no hunting, and no board moves. Skip its cards and PRs wherever they turn up (board columns, search results, our own open PRs) and do not mention them in slot summaries beyond one "paused" line. Work already in flight there is left as it is. As of 2026-11-17, `kairos-io/AuroraBoot` is paused because it is being merged into the kairos monorepo, at Itxaka's request.
+
 ## 6. Clone repositories into the workspace
 
 All repository work happens under `workspace/<repo>/`. The agent does not operate against paths outside this directory. Clones are the agent's fork, with the upstream added as a second remote named `upstream`.

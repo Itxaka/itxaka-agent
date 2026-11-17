@@ -148,7 +148,6 @@ hunt:
     - kairos-io/kairos
     - kairos-io/hadron
     - kairos-io/kairos
-    - kairos-io/AuroraBoot
     - kairos-io/kairos
     - kairos-io/provider-kubernetes
     - kairos-io/kairos-operator
@@ -199,10 +198,13 @@ repositories:
     # spelling; case matters on GitHub API paths.
     name: AuroraBoot
     default_branch: main
+    # Paused 2026-11-17 at Itxaka's request: AuroraBoot is moving into the
+    # kairos monorepo. Nothing is done here (no review, QA, own-PR fixups,
+    # intake, hunting) until he says otherwise. See RULES.md rule 5b.
+    paused: true
     watch:
-      # Issue triage stays scoped to the kairos repo per user direction.
       issues: false
-      pull_requests: true
+      pull_requests: false
   - owner: kairos-io
     name: provider-kubernetes
     default_branch: main

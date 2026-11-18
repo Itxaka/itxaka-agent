@@ -83,6 +83,14 @@ If a slot blew up before doing meaningful work (network failure fetching state, 
    ```
    Do not pull the timezone out with grep (an empty `TZ` makes `date` print UTC), do not convert from UTC, and do not add an offset by hand. If the zone abbreviation reads `UTC` for a non-UTC timezone, the read went wrong; stop and say so. Quote the same value, abbreviation included, in the slot summary. If it is outside `schedule.working_hours` or the weekday is not in `schedule.active_weekdays`, log "outside working window" and exit successfully. Do nothing else. **Exception:** in dry-run mode this check is soft — log the window state but continue, so smoke tests can run at any hour.
 
+### Automated bump sweep (rule 12)
+
+Before the pick step, on every slot (seat A only when two seats run), put the automated bump PRs in the QA column. For each watched repo that is not `paused`:
+```
+gh pr list -R <owner>/<repo> --state open --limit 100 --json number,title,author,isDraft,url,projectItems
+```
+Keep PRs where `isDraft` is false, `author.login` is in `qa_auto_bump.authors` and the title starts with one of `qa_auto_bump.title_prefixes`. Skip those whose board status (`projectItems` entry titled "Issue tracking board", case-insensitive, emoji stripped) is `QA`, `QA OK`, `Under review` or `Done`. For the rest run the same two calls as Finalize step 2a (`gh project item-add` then `gh project item-edit ... --single-select-option-id 3f5385f2`). Failures are noted in the audit summary and do not stop the slot. Gate both calls in dry-run. This adds no review, approval or merge.
+
 ### Pick what to work on
 
 #### Slot mode

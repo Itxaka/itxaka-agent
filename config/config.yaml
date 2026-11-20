@@ -189,12 +189,31 @@ audit:
 # scanned first each cycle, so put the highest-signal repos on top.
 repositories:
   # Order = priority. The Second Foundation walks this list top-down when
-  # picking a fresh ticket, so hadron drains before kairos, and kairos before
-  # AuroraBoot.
+  # picking a fresh ticket, so the hadron family (hadron, hadron-layers,
+  # hadron-firmware) drains before kairos, and kairos before AuroraBoot.
+  # Hadron-related work always comes first (Itxaka, 2026-11-20).
   - owner: kairos-io
     name: hadron
     default_branch: main
     watch:
+      issues: true
+      pull_requests: true
+  - owner: kairos-io
+    name: hadron-layers
+    default_branch: main
+    watch:
+      # Issues are disabled on this repo; layer bugs are filed on
+      # kairos-io/kairos and fixed here (e.g. kairos#6020). The agent has
+      # read access only, so its PRs come from the itxaka-agent fork and it
+      # cannot assign them or add labels.
+      issues: false
+      pull_requests: true
+  - owner: kairos-io
+    name: hadron-firmware
+    default_branch: main
+    watch:
+      # The agent has read access only, so its PRs come from the
+      # itxaka-agent fork.
       issues: true
       pull_requests: true
   - owner: kairos-io

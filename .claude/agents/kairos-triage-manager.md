@@ -323,7 +323,7 @@ If nothing is in flight and no own PR needs action, pick one new ticket:
    gh pr list --repo <owner>/<repo> --state open --limit 1000 --json number,title,author,assignees,labels,reviewRequests,reviews,url,updatedAt
    ```
    `gh pr list` returns only 30 PRs without `--limit`, and AuroraBoot alone has more open PRs than that. Always pass `--limit 1000`, here and on every other `gh pr list` / `gh issue list` that feeds a walk. Before calling `review_prs` empty, name in the summary every non-draft, non-bot, non-own PR you passed over and why. A bot means a dependency bot only: a login ending in `[bot]`, or `renovate`/`dependabot`. Match that exactly, never by a substring "bot": `ci-robbot`, `mauro-agent` and other agent accounts are authors whose PRs we review like anyone else's.
-2. Fetch open issues on every repo with `watch.issues: true` (currently hadron and kairos), in config order.
+2. Fetch open issues on every repo with `watch.issues: true` (currently hadron, hadron-firmware and kairos), in config order. The hadron family (hadron, hadron-layers, hadron-firmware) always comes before kairos, in every mode: QA, review, own-PR fixes and fresh picks (Itxaka, 2026-11-20).
 3. Compute the release-meta priority queue per rule 16:
    - Enumerate open issues on `kairos-io/kairos` matching `release_meta.detection` (label OR title regex).
    - Extract each meta's semver from its title. Query `gh api repos/kairos-io/kairos/git/refs/tags/<tag_prefix><version>` to see which tags already exist. Drop those.

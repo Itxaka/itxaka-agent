@@ -204,16 +204,15 @@ repositories:
     watch:
       # Issues are disabled on this repo; layer bugs are filed on
       # kairos-io/kairos and fixed here (e.g. kairos#6020). The agent has
-      # read access only, so its PRs come from the itxaka-agent fork and it
-      # cannot assign them or add labels.
+      # write access since 2026-11-20, like on hadron: it can assign, label
+      # and approve here.
       issues: false
       pull_requests: true
   - owner: kairos-io
     name: hadron-firmware
     default_branch: main
     watch:
-      # The agent has read access only, so its PRs come from the
-      # itxaka-agent fork.
+      # The agent has write access since 2026-11-20, like on hadron.
       issues: true
       pull_requests: true
   - owner: kairos-io
